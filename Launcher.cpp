@@ -1,9 +1,20 @@
 #include "PseudoNTFS.hpp"
+#include "Path.hpp"
 
 const int32_t DISK_SIZE = 10000;
 const int32_t CLUSTER_SIZE = 100; 
 
 int main(int argc, char * argv[]) {
+
+    Path p1 = Path();
+    p1.goInto("folder1");
+    p1.goInto("folder2");
+    p1.goInto("folder3");
+
+    Path p2 = p1;
+
+    p1.goBack();
+    p2.goBack();
 
     PseudoNTFS pntfs = PseudoNTFS(DISK_SIZE, CLUSTER_SIZE);
 
