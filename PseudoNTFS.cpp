@@ -2,6 +2,7 @@
 #include <math.h>
 #include <iostream>
 #include <string>
+#include <sstream>
 
 #include "PseudoNTFS.hpp"
 #include "Utils.hpp"
@@ -32,11 +33,15 @@ PseudoNTFS::PseudoNTFS(int32_t diskSize, int32_t clusterSize) : mftItemsCount((d
     //  disk is represented with byte array
     ntfs = new unsigned char[br.disk_size];
     memset(ntfs, 0, br.disk_size);
+    bootRecord = (boot_record *) ntfs;
 
     //set start address for parts of disk
     br.mft_start_address = ((int32_t) ntfs) + sizeof(boot_record);
+    mftItemStart = (mft_item *) br.mft_start_address;
     br.bitmap_start_address = br.mft_start_address + mftItemsCount * sizeof(mft_item);
+    bitmapStart = (unsigned char *) br.bitmap_start_address;
     br.data_start_address = br.bitmap_start_address + ceil(br.cluster_count / 8.0);
+    dataStart = (unsigned char *) br.data_start_address;
 
     br.mft_max_fragment_count = MFT_FRAGMENTS_COUNT;
 
@@ -48,13 +53,14 @@ PseudoNTFS::PseudoNTFS(int32_t diskSize, int32_t clusterSize) : mftItemsCount((d
 
     // create root directory
     struct mft_item mftItem;
-    mftItem.uid = getUID();
+    mftItem.uid = getUid();
     mftItem.isDirectory = true;
     mftItem.item_order = 1;
     mftItem.item_order_total = 1;
     strcpy(mftItem.item_name, ROOT_NAME);
     mftItem.item_size = 0;
     // save root directory to start of mft table
+    clearMftItemFragments(mftItem.fragments);
     setMftItem(0, &mftItem);
 
 }
@@ -78,17 +84,15 @@ void PseudoNTFS::initMft() {
 // initialize bitmap to free (false = 0)
 void PseudoNTFS::initBitmap() {
 
-    struct boot_record * br = (boot_record *) ntfs;
-    for (int i = 0; i < br->cluster_count; i++) {
+    for (int i = 0; i < bootRecord->cluster_count; i++) {
         setBitmap(i, false);
     }
 }
 
 void PseudoNTFS::setBitmap(const int index, const bool value) {
 
-    struct boot_record * br =  (boot_record *) ntfs;
 
-    if (index < 0 || index > br->cluster_count - 1) {
+    if (index < 0 || index > bootRecord->cluster_count - 1) {
         indexOutOfRange = true;
         return;
     }
@@ -96,7 +100,7 @@ void PseudoNTFS::setBitmap(const int index, const bool value) {
     int i = index / 8;
     int j = index % 8;
 
-    unsigned char temp = ((unsigned char *) br->bitmap_start_address)[i];
+    unsigned char temp = bitmapStart[i];
     
     if (value) {
         temp = temp | (128 >> j);
@@ -105,21 +109,19 @@ void PseudoNTFS::setBitmap(const int index, const bool value) {
         temp = temp & (127 >> j);
     }
 
-    memcpy(&(((unsigned char *) br->bitmap_start_address)[i]), &temp, sizeof(unsigned char));
+    memcpy(&bitmapStart[i], &temp, sizeof(unsigned char));
 }
 
 const bool PseudoNTFS::isClusterFree(const int index) {
 
-    struct boot_record * br =  (boot_record *) ntfs;
-
-    if (index < 0 || index > br->cluster_count - 1) {
+    if (index < 0 || index > bootRecord->cluster_count - 1) {
         indexOutOfRange = true;
         return false;
     }
 
     int i = index / 8;
     int j = index % 8;
-    unsigned char temp = ((unsigned char *) br->bitmap_start_address)[i];
+    unsigned char temp = bitmapStart[i];
 
     return  !((128 >> j) & temp);
 }
@@ -131,8 +133,7 @@ void PseudoNTFS::setMftItem(const int index, const struct mft_item * item) {
         return;
     }
 
-    struct boot_record * br =  (boot_record *) ntfs;
-    memcpy(&(((mft_item *) br->mft_start_address)[index]), item, sizeof(mft_item));
+    memcpy(&mftItemStart[index], item, sizeof(mft_item));
 
     freeMftItems--;
 }
@@ -144,8 +145,7 @@ mft_item * PseudoNTFS::getMftItem(const int index) {
         return NULL;
     }
 
-    struct boot_record * br =  (boot_record *) ntfs;
-    return &(((mft_item *) br->mft_start_address)[index]);
+    return &mftItemStart[index];
 }
 
 void PseudoNTFS::setClusterData(const int index, const unsigned char * data, const int size) {
@@ -158,24 +158,22 @@ void PseudoNTFS::setClusterData(const int index, const unsigned char * data, con
     }
 
     // clear cluster data
-    memset(&(((unsigned char *)br->data_start_address)[index * br->cluster_size]), 0, br->cluster_size);
+    memset(&dataStart[index * br->cluster_size], 0, bootRecord->cluster_size);
 
     // set cluster with data
-    memcpy(&(((unsigned char *)br->data_start_address)[index * br->cluster_size]), data, size);
+    memcpy(&dataStart[index * br->cluster_size], data, size);
     setBitmap(index, true);
 }
 
 void PseudoNTFS::getClusterData(const int index, unsigned char * data) {
     
-    struct boot_record * br =  (boot_record *) ntfs;
-
-    if (index < 0 || index > br->cluster_count - 1) {
+    if (index < 0 || index > bootRecord->cluster_count - 1) {
         indexOutOfRange = true;
         return;
     }
 
-    memset(data, 0, br->cluster_size);
-    memcpy(data, &(((unsigned char *)br->data_start_address)[index * br->cluster_size]), br->cluster_size);
+    memset(data, 0, bootRecord->cluster_size);
+    memcpy(data, &dataStart[index * bootRecord->cluster_size], bootRecord->cluster_size);
 
 }
 
@@ -201,21 +199,21 @@ void PseudoNTFS::prepareMftItems(std::list<struct data_seg> * dataSegmentList, i
         } while (demandedSize > 0);
 }
 
-void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char * fileName, char * fileData, int32_t fileLength) {
+void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char * fileName, int32_t uid, char * fileData, int32_t fileLength) {
 
         int8_t dataClustersCount = dataSegmentList->size();
        
         int8_t neededMftItemsCount = neededMftItems(dataClustersCount);
         if (neededMftItemsCount > freeMftItems) {
-            //TODO NOT ENOUGH SPACE
+            std::cout << "NOT ENOUGH FREE ITEMS";
             return;
         }
         
         // Prepare struct to save
         struct mft_item mftItem;
-        mftItem.uid = getUID();
+        mftItem.uid = uid;
         mftItem.isDirectory = false;
-        mftItem.item_order = 0;
+        mftItem.item_order = 1;
         mftItem.item_order_total = mftItemsCount;
         strcpy(mftItem.item_name, fileName);
         mftItem.item_size = fileLength;
@@ -224,18 +222,18 @@ void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char *
         int8_t mftItemsLeft = neededMftItemsCount;
         int8_t mftIndex;
 
-        struct boot_record * br = (boot_record *) ntfs;
         for (data_seg item : *dataSegmentList) {
 
             counter %= MFT_FRAGMENTS_COUNT;
             
             if (counter == 0) {
                 mftIndex = findFreeMft();
+                freeMftItems--;
                 clearMftItemFragments(mftItem.fragments);  
             }
 
             mftItem.fragments[counter].fragment_start_address = item.startIndex;
-            mftItem.fragments[counter].fragment_count = item.size / br->cluster_size;
+            mftItem.fragments[counter].fragment_count = item.size / bootRecord->cluster_size;
             saveContinualSegment(fileData + dataCounter, item.size, item.startIndex);
             dataCounter += item.size;
 
@@ -250,11 +248,16 @@ void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char *
 
 }
 
-void PseudoNTFS::saveFileToPseudoNtfs(const char * fileName, const char * filePath) {
+void PseudoNTFS::saveFileToPseudoNtfs(const char * fileName, const char * filePath, int32_t parentDirectoryMftIndex) {
 
+        int32_t uid = getUid();
+        saveUid(parentDirectoryMftIndex, uid);
 
         std::string fileData;
-        readFile(filePath, &fileData);
+        if (!readFile(filePath, &fileData)) {
+            std::cout << "FILE NOT FOUND";
+            return;
+        }
         // No end char - we only store values to save
         int len = fileData.length();
 
@@ -262,21 +265,19 @@ void PseudoNTFS::saveFileToPseudoNtfs(const char * fileName, const char * filePa
         memcpy(data, fileData.c_str(), len);
         
         if (len > freeSpace) {
-            //TODO NOT ENOUGH SPACE
+            std::cout << "NOT ENOUGH FREE SPACE";
             return;
         };
     
         std::list<struct data_seg> dataSegmentList;
         prepareMftItems(&dataSegmentList, len);
-        save(&dataSegmentList, fileName, data, len);
-    
-        //TODO SET INFO TO PARENT DIRECTORY
+        save(&dataSegmentList, fileName, uid, data, len);
 }
 
 void PseudoNTFS::clearMftItemFragments(mft_fragment * fragments) const {
 
     mft_fragment clearFragments[MFT_FRAGMENTS_COUNT] = {0, 0};
-    memcpy(fragments, clearFragments, MFT_FRAGMENTS_COUNT);
+    memcpy(fragments, clearFragments, MFT_FRAGMENTS_COUNT * sizeof(mft_fragment));
 }
 
 int PseudoNTFS::neededMftItems(int8_t dataClustersCount) const {
@@ -293,9 +294,7 @@ int PseudoNTFS::neededMftItems(int8_t dataClustersCount) const {
 
 int PseudoNTFS::findFreeMft() const {
 
-    struct boot_record * br = (boot_record *) ntfs;
-
-    struct mft_item * mftItem = (mft_item *) br->mft_start_address;
+    struct mft_item * mftItem = mftItemStart;
 
     for (int i = 0; i < mftItemsCount; i++) {
         if (mftItem[i].uid == UID_ITEM_FREE) {
@@ -304,7 +303,7 @@ int PseudoNTFS::findFreeMft() const {
     }
 
     // In case there is no free mft item
-    return -1;
+    return NOT_FOUND;
 }
 
 /*
@@ -313,21 +312,19 @@ startIndex - index to cluster data segment
 providedSize - meximal continual free space
 */
 void PseudoNTFS::findFreeSpace(const int32_t demandedSize, int32_t * startIndex, int32_t * providedSize) {
-    
-    struct boot_record * br =  (boot_record *) ntfs;
 
     *providedSize = 0;
     
     int32_t maxSize = 0;
     int32_t maxIndex = 0;
 
-    int32_t bound = ceil(br->cluster_count / 8); 
+    int32_t bound = ceil(bootRecord->cluster_count / 8); 
     for (int i = 0; i < bound; i++) {
         if (isClusterFree(i)) {
             if (maxSize == 0) {
                 maxIndex = i;
             }
-            maxSize += br->cluster_size;
+            maxSize += bootRecord->cluster_size;
         }
         else {
             if (maxSize > *providedSize) {
@@ -351,36 +348,33 @@ size - size of data for save
 data - start of data to be saved
 */
 void PseudoNTFS::saveContinualSegment(const char * data, const int32_t size, const int32_t startIndex) {
-
-    struct boot_record * br =  (boot_record *) ntfs;
     
-    int32_t bound = size / br->cluster_size;
+    int32_t bound = size / bootRecord->cluster_size;
     int32_t left = size;
     
     for (int i = 0; i < bound; i++) {  
-        setClusterData(startIndex + i, (unsigned char *) data + i * br->cluster_size , br->cluster_size);
-        left -= br->cluster_size;
+        setClusterData(startIndex + i, (unsigned char *) data + i * bootRecord->cluster_size , bootRecord->cluster_size);
+        left -= bootRecord->cluster_size;
     }
 
     if (left > 0) {
-        setClusterData(startIndex + bound, (unsigned char *) data + bound * br->cluster_size, left);
+        setClusterData(startIndex + bound, (unsigned char *) data + bound * bootRecord->cluster_size, left);
     }
 }
 
 
 int32_t PseudoNTFS::contains(const int32_t mftItemIndex, const char * name, const bool directory) {
 
-    struct boot_record * br = (boot_record *) ntfs;
-    struct mft_item * mftItem = (mft_item *) br->mft_start_address;
+    struct mft_item * mftItem = &mftItemStart[mftItemIndex];
     
     int32_t dataClusterStartIndex, dataClustersCount, searchedMftItemIndex;
     for (int i = 0; i < MFT_FRAGMENTS_COUNT; i++) {
         dataClusterStartIndex = mftItem->fragments[i].fragment_start_address;
-        dataClustersCount = mftItem->fragments[i].fragment_start_address;
+        dataClustersCount = mftItem->fragments[i].fragment_count;
 
         searchedMftItemIndex = searchClusters(dataClusterStartIndex, dataClustersCount, name, directory);
-        if (mftItemIndex != NOT_FOUND) {
-            return mftItemIndex;
+        if (searchedMftItemIndex != NOT_FOUND) {
+            return searchedMftItemIndex;
         }
     }
 
@@ -404,10 +398,8 @@ int32_t PseudoNTFS::searchClusters(const int32_t dataClusterStartIndex, const in
 
 int32_t PseudoNTFS::searchCluster(const int32_t dataClusterIndex, const char * name, const bool directory) {
 
-    struct boot_record * br = (boot_record *) ntfs;
-
-    int maxUidInDataCluster = br->cluster_size / sizeof(int32_t);
-    int32_t * mftItemUid = (int32_t *) &(((unsigned char * ) br->data_start_address)[dataClusterIndex * br->cluster_size]);
+    int maxUidInDataCluster = bootRecord->cluster_size / sizeof(int32_t);
+    int32_t * mftItemUid = (int32_t *) &dataStart[dataClusterIndex * bootRecord->cluster_size];
 
     int32_t mftItemIndex;
     for (int i = 0; i < maxUidInDataCluster; i++) {
@@ -423,11 +415,9 @@ int32_t PseudoNTFS::searchCluster(const int32_t dataClusterIndex, const char * n
 
 int32_t PseudoNTFS::findMftItemWithProperties(const int32_t uid, const char * name, const bool directory) {
 
-    struct mft_item * mftItem;
-
-    struct mft_item * tempMftItem = (mft_item *) ((boot_record *) ntfs)->mft_start_address;
+    struct mft_item * tempMftItem = mftItemStart;
     for (int i = 0; i < mftItemsCount; i++) {
-        if (tempMftItem[i].uid == uid && strcmp(mftItem->item_name, name) && mftItem->isDirectory == directory) {
+        if (tempMftItem[i].uid == uid && strcmp(tempMftItem[i].item_name, name) == 0 && tempMftItem[i].isDirectory == directory) {
             return i;
         }
     }
@@ -435,7 +425,226 @@ int32_t PseudoNTFS::findMftItemWithProperties(const int32_t uid, const char * na
     return NOT_FOUND;
 }
 
+bool PseudoNTFS::saveUid(int32_t destinationMftItemIndex, int32_t uid) {
+
+    struct mft_item * mftItem = &mftItemStart[destinationMftItemIndex];
+
+    int32_t fragmentCount;
+    int32_t size = mftItem->item_size;
+    for (int i = 0; i < MFT_FRAGMENTS_COUNT; i++) {
+
+        fragmentCount = mftItem->fragments[i].fragment_count;
+        if (fragmentCount > 0) {
+            if (writeUid(mftItem->fragments[i].fragment_start_address, fragmentCount, uid)) {
+                mftItem->item_size += sizeof(int32_t);
+                return true;
+            }
+        }
+        else if (fragmentCount == 0) {
+            int32_t providedSize = 0;
+            int32_t startIndex = 0;
+
+            findFreeSpace(bootRecord->cluster_size, &startIndex, &providedSize);
+
+            if (providedSize == 0 || providedSize < sizeof(int32_t)) {
+                return false;
+            }
+            else {
+                mftItem->item_size += sizeof(int32_t);
+                mftItem->fragments[i].fragment_count = 1;
+                mftItem->fragments[i].fragment_start_address = startIndex;
+                writeUid(startIndex, 1, uid);
+                setBitmap(startIndex, true);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool PseudoNTFS::writeUid(int32_t startIndex, int32_t clusterCount, int32_t uid) {
+    
+    int32_t * tempUid = (int32_t *)&dataStart[startIndex * bootRecord->cluster_size]; 
+
+    for (int i = 0; i < clusterCount; i++) {
+        if (tempUid[i] == 0) {
+            tempUid[i] = uid;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void PseudoNTFS::loadFileFromPseudoNtfs(int32_t mftItemIndex, std::string * content) {
+
+    struct mft_item * mftItem = &mftItemStart[mftItemIndex];
+
+    std::ostringstream oss;
+    for (int i = 0; i < MFT_FRAGMENTS_COUNT; i++) {
+        loadDataFragment(mftItem->fragments[i].fragment_start_address, mftItem->fragments[i].fragment_count, &oss);
+    }
+
+    *content = oss.str();
+}
+
+void PseudoNTFS::loadDataFragment(int32_t startIndex, int32_t fragmentCount, std::ostringstream * oss) {
+
+    char * buffer = new char[bootRecord->cluster_size + 1];
+    buffer[bootRecord->cluster_size] = '\0';
+
+    for (int i = startIndex; i < fragmentCount; i++) {
+        getClusterData(i, (unsigned char *) buffer);
+        *oss << buffer;
+    }
+    delete [] buffer;
+    buffer = NULL;
+}
+
+void PseudoNTFS::getDirectoryContent(const int32_t directoryMftItemIndex, std::list<mft_item> * content) {
+
+    struct mft_item * directoryMftItem = &mftItemStart[directoryMftItemIndex];
+
+    std::list<int32_t> uids;
+
+    for (int i = 0; i < MFT_FRAGMENTS_COUNT; i++) {
+        getAllUidsFromFragment(directoryMftItem->fragments[i].fragment_start_address, directoryMftItem->fragments[i].fragment_count, &uids);
+    }
+
+    struct mft_item * mftItem = mftItemStart;
+    int32_t mftItemIndex;
+
+    for (int32_t uid : uids) {
+        mftItemIndex = findMftItemWithUid(uid);
+        if (mftItemIndex != NOT_FOUND) {
+            content->push_back(mftItem[mftItemIndex]);
+        }
+    }
+
+}
+
+void PseudoNTFS::getAllUidsFromFragment(const int32_t startIndex, const int32_t fragmentsCount, std::list<int32_t> * uids) {
+
+    int32_t * tempUid = (int32_t *) &dataStart[startIndex * bootRecord->cluster_size];
+    int32_t bound = (fragmentsCount * bootRecord->cluster_size) / sizeof(int32_t);
+
+    for (int i = 0; i < bound; i++) {
+        if (tempUid[i] != 0) {
+            uids->push_back(tempUid[i]);
+        }    
+    }
+}
+
+int32_t PseudoNTFS::findMftItemWithUid(const int32_t uid) {
+
+    for (int i = 0; i < mftItemsCount; i++) {
+        if (mftItemStart[i].uid == uid) {
+            return i;
+        }
+    }
+
+    return NOT_FOUND;
+}
+
+void PseudoNTFS::makeDirectory(const int32_t parentMftItemIndex, const char * name) {
+
+    if (freeSpace < bootRecord->cluster_size) {
+        std::cout << "NOT ENOUGH FREE SPACE\n";
+        return;
+    }
+
+    int32_t mftIndex = findFreeMft();
+
+    if (mftIndex == NOT_FOUND) {
+        std::cout << "NOT ENOUGH FREE MFT ITEMS\n";
+        return;
+    }
+    else {
+        freeMftItems--;
+    }
+
+    int32_t demandedSize, providedSize, startIndex;
+
+    demandedSize = bootRecord->cluster_size;
+    findFreeSpace(demandedSize, &startIndex, &providedSize);
+
+    if (providedSize == 0) {
+        std::cout << "NOT ENOUGH FREE SPACE\n";
+        return;
+    }
+
+    struct mft_item mftItem;
+    mftItem.uid = getUid();
+    strcpy(mftItem.item_name, name);
+    mftItem.isDirectory = true;
+    mftItem.item_order = 1;
+    mftItem.item_order_total = 1;
+    mftItem.item_size = 0;
+    clearMftItemFragments(mftItem.fragments);
+    setMftItem(mftIndex, &mftItem);
+    saveUid(parentMftItemIndex, mftItem.uid);
+
+}
+
+bool PseudoNTFS::isDirEmpty(const int32_t mftItemIndex) {
+    return mftItemStart[mftItemIndex].item_size == 0;
+}
+
+void PseudoNTFS::removeDirectory(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex) {
+
+    struct mft_item * mftItem = &mftItemStart[mftItemIndex];
+    struct mft_item * parentMftItem = &mftItemStart[parentDirectoryMftItemIndex];
+
+    if (!isDirEmpty(mftItemIndex)) {
+        std::cout << "NOT EMPTY\n";
+        return;
+    }
+    else {
+        for (int i =0; i < MFT_FRAGMENTS_COUNT; i++) {
+            if (removeUid(parentMftItem->fragments[i].fragment_start_address, parentMftItem->fragments[i].fragment_count, mftItem->uid)) {
+                break;
+            }
+        }
+
+        mftItem->uid = UID_ITEM_FREE;
+        strcpy(mftItem->item_name, "");
+        mftItem->item_size = 0;
+        mftItem->item_order = 0;
+        mftItem->item_order_total = 0;
+        mftItem->isDirectory = false;
+        clearMftItemFragments(mftItem->fragments);
+
+        freeMftItems++;
+
+        parentMftItem->item_size -= sizeof(int32_t);
+    }
+}
+
+bool PseudoNTFS::removeUid(int32_t startIndex, int32_t clusterCount, int32_t uid) {
+    
+    int32_t * tempUid = (int32_t *)&dataStart[startIndex * bootRecord->cluster_size]; 
+
+    for (int i = 0; i < clusterCount; i++) {
+        if (tempUid[i] == uid) {
+            tempUid[i] = 0;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /* TEST FUNCTIONS */
+
+void PseudoNTFS::printMftItemInfo(const mft_item * mftItem) {
+    std::cout << "UID: " << mftItem->uid << std::endl;
+    std::cout << "Name: " << mftItem->item_name << std::endl;
+    std::cout << "Is directory: " << mftItem->isDirectory << std::endl;
+    std::cout << "Item size: " << (int) mftItem->item_size << std::endl;
+    std::cout << "Item order: " << (int) mftItem->item_order << std::endl;
+    std::cout << "Item order total: " << (int) mftItem->item_order_total << std::endl;
+}
 
 void PseudoNTFS::printBootRecord(std::ofstream * output) const {
 

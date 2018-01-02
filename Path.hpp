@@ -4,12 +4,20 @@
 #include <iostream>
 #include <cstring>
 
+#include "Utils.hpp"
+
+
     const int8_t NAME_LENGTH = 12;
     const int8_t NOT_FILLED = -1;
 
     const char DELIMETER = ' ';
     const char PATH_SEPARATOR = '/';
     
+    const char PATH_DELIM[] = "/";
+    const char BACK[] = "..";
+    
+    class PseudoNTFS;
+
     // Basic node of path
     struct pathNode {
         
@@ -28,24 +36,33 @@
             next = NULL;
             previous = NULL;
         }
-        
     };
-    
+
     class Path {
       
       private:
         struct pathNode * const pathHead;
         struct pathNode * pathTail;
+        PseudoNTFS * ntfs;
+
+        void clear();
+
       public:
         
-        Path();
+        Path(PseudoNTFS * ntfs);
         Path(const Path & path);
         ~Path();
         
-        void goInto(const char * name);
-        void goBack();
+        Path & operator=(const Path & path);
+
+        bool change(char * path, bool isDirectory);
+        bool goInto(const char * name, const bool isDirectory);
+        bool goBack();
+        int32_t getCurrentMftIndex();
         void printPath();
-        
+
+        static void getNameFromPath(const char * path, char * fileName);
+        static void getNameFromPath(const char * path, char * fileName, std::string * parentDirectoryPath);    
     };
 
 

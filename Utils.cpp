@@ -6,9 +6,13 @@
 /*
 Load content of file to string - with EOF 
 */
-void readFile(const char * filePath, std::string * str) {
+bool readFile(const char * filePath, std::string * str) {
 
     std::ifstream file(filePath);
+
+    if (!file) {
+        return false;
+    }
 
     std::ostringstream oss;
     char c;
@@ -22,4 +26,6 @@ void readFile(const char * filePath, std::string * str) {
     file.close();
 
     *str = oss.str();
+
+    return true;
 }

@@ -53,6 +53,11 @@
             int32_t freeSpace;
             int32_t freeMftItems;
 
+            struct boot_record * bootRecord;
+            struct mft_item * mftItemStart;
+            unsigned char * bitmapStart;
+            unsigned char * dataStart;
+
             bool indexOutOfRange;
 
             void initMft();
@@ -61,12 +66,11 @@
             bool const isClusterFree(const int index);
 
             void setMftItem(const int index, const struct mft_item * item);
-            mft_item * getMftItem(const int index);
 
             void setClusterData(const int index, const unsigned char * data, const int size);
             void getClusterData(const int index, unsigned char * data);
 
-            const int getUID() {return uidCounter++;};
+            const int getUid() {return uidCounter++;};
             
             void clearMftItemFragments(mft_fragment * fragments) const;
             int findFreeMft() const;
@@ -74,11 +78,23 @@
             void findFreeSpace(const int32_t demandedSize, int32_t * startIndex, int32_t * providedSize);
             void saveContinualSegment(const char * data, const int32_t size, const int32_t startIndex);
             void prepareMftItems(std::list<struct data_seg> * dataSegmentList, int32_t demandedSize);
-            void save(std::list<struct data_seg> * dataSegmentList, const char * fileName, char * fileData, int32_t fileLength);
-            int32_t contains(const int32_t mftItemIndex, const char * name, const bool directory);
+            void save(std::list<struct data_seg> * dataSegmentList, const char * fileName, int32_t uid, char * fileData, int32_t fileLength);
+            
             int32_t searchClusters(const int32_t dataClusterStartIndex, const int32_t dataClustersCount, const char * name, const bool directory);
             int32_t searchCluster(const int32_t dataClusterIndex, const char * name, const bool directory); 
             int32_t findMftItemWithProperties(const int32_t uid, const char * name, const bool directory);
+
+            void removeUid(const int32_t destinationMftItemIndex, int32_t uid);
+            bool saveUid(int32_t destinationMftItemIndex, int32_t uid);
+            bool removeUid(int32_t startIndex, int32_t clusterCount, int32_t uid); 
+            bool writeUid(int32_t startIndex, int32_t clusterCount, int32_t uid);
+
+            void loadDataFragment(int32_t startIndex, int32_t fragmentCount, std::ostringstream * oss);
+
+            void getAllUidsFromFragment(const int32_t startIndex, const int32_t fragmentsCount, std::list<int32_t> * uids);
+            int32_t findMftItemWithUid(const int32_t uid);
+
+            bool isDirEmpty(const int32_t mftItemIndex);
 
             /* TEST FUNCTION */
             void printBootRecord(std::ofstream * output) const;
@@ -89,13 +105,23 @@
             PseudoNTFS(int32_t diskSize, int32_t clusterSize);
             ~PseudoNTFS();
 
-            void saveFileToPseudoNtfs(const char * fileName, const char * filePath);
+            void saveFileToPseudoNtfs(const char * fileName, const char * filePath, int32_t parentDirectoryMftIndex);
+            void loadFileFromPseudoNtfs(int32_t mftItemIndex, std::string * content);
 
             void clearErrorState() {indexOutOfRange = true;};
             const bool getErrorState() {return indexOutOfRange;};
 
+            int32_t contains(const int32_t mftItemIndex, const char * name, const bool directory);
+            mft_item * getMftItem(const int index);
+
+            void getDirectoryContent(const int32_t directoryMftItemIndex, std::list<mft_item> * content);
+
+            void makeDirectory(const int32_t parentMftItemIndex, const char * name);
+            void removeDirectory(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex);
+
             /* TEST FUNCTION */
             void printDisk();
+            void printMftItemInfo(const mft_item * mftItem);
     };
 
 #endif
