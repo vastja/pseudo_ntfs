@@ -19,7 +19,11 @@ void executeCat(string * param);
 void executeInfo(string * param);
 void executeLs(string * param);
 void executeMkdir(string * param);
-void executeRmdir(string * param);  
+void executeRmdir(string * param);
+void executeOutcp(string * fparam, string * sParam);  
+void executeRm(string * param);
+void executeMv(string * fParam, string * sParam);
+void executeCp(string * fParam, string * sParam) ;
 
 int main(int argc, char * argv[]) {
 
@@ -44,11 +48,7 @@ int main(int argc, char * argv[]) {
         executeCommand(command);
         cout << endl;
     
-    }
-
-
-    //pntfs.saveFileToPseudoNtfs("temp_file", "test_file.txt");
-   
+    }  
 }
 
 void executeCommand(string command) {
@@ -63,7 +63,6 @@ void executeCommand(string command) {
   }
   else if (token == "cd") {
     getline(iss, fParam, DELIMETER);
-
     executeCd(&fParam);
   }
   else if (token == "incp") {
@@ -90,6 +89,25 @@ void executeCommand(string command) {
   else if (token == "rmdir") {
     getline(iss, fParam, DELIMETER);
     executeRmdir(&fParam); 
+  }
+  else if (token == "outcp") {
+    getline(iss, fParam, DELIMETER);
+    getline(iss, sParam, DELIMETER);
+    executeOutcp(&fParam, &sParam);
+  }
+  else if (token == "rm") {
+    getline(iss, fParam, DELIMETER);
+    executeRm(&fParam); 
+  }
+  else if (token == "mv") {
+    getline(iss, fParam, DELIMETER);
+    getline(iss, sParam, DELIMETER);
+    executeMv(&fParam, &sParam);
+  }
+  else if (token == "cp") {
+    getline(iss, fParam, DELIMETER);
+    getline(iss, sParam, DELIMETER);
+    executeCp(&fParam, &sParam);
   }
   
 }
@@ -141,7 +159,7 @@ void executeCat(string * param) {
         cout << content;
     }
     else {
-        cout << "PATH NOT FOUND";
+        cout << "FILE NOT FOUND";
     }
 
     delete [] path;
@@ -244,4 +262,108 @@ void executeRmdir(string * param) {
 
     delete [] path;
 
+}
+
+void executeOutcp(string * fParam, string * sParam) {
+    
+    char * path = new char[fParam->length() + 1];
+    strcpy(path, fParam->c_str());
+    
+    Path tempPath = *currentPath;
+    if (tempPath.change(path, false)) {
+        string content;
+        pntfs->loadFileFromPseudoNtfs(tempPath.getCurrentMftIndex(), &content);
+        
+        ofstream file(*sParam);
+        if (file) {
+            file << content;
+            file.close();
+            cout << "OK"; 
+        }
+        else {
+           cout << "PATH NOT FOUND"; 
+        }
+    }
+    else {
+        cout << "FILE NOT FOUND";
+    }
+
+    delete [] path;
+}
+
+void executeRm(string * param) {
+
+    char * path = new char[param->length() + 1];
+    strcpy(path, param->c_str());
+    
+    int32_t mftItemIndex;
+    Path tempPath = *currentPath;
+    if (tempPath.change(path, false)) {
+        mftItemIndex = tempPath.getCurrentMftIndex();
+        tempPath.goBack();
+        pntfs->removeFile(mftItemIndex, tempPath.getCurrentMftIndex());
+    }
+    else {
+        cout << "FILE NOT FOUND";
+    }
+
+    delete [] path;
+
+}
+
+void executeMv(string * fParam, string * sParam) {
+    char * fPath = new char[fParam->length() + 1];
+    strcpy(fPath, fParam->c_str());
+    
+    char * sPath = new char[sParam->length() + 1];
+    strcpy(sPath, sParam->c_str());
+    
+    int32_t fileMftIndex, directoryMftIndex;
+    Path tempPath = *currentPath;
+    if (tempPath.change(fPath, false)) {
+        fileMftIndex = tempPath.getCurrentMftIndex();
+        Path tempPath = *currentPath;
+        if (tempPath.change(sPath, true)) {
+            directoryMftIndex = tempPath.getCurrentMftIndex();
+            tempPath.goBack();
+            pntfs->move(fileMftIndex, tempPath.getCurrentMftIndex(), directoryMftIndex);
+        }
+        else {
+            cout << "PATH NOT FOUND";
+        }
+    }
+    else {
+        cout << "FILE NOT FOUND";
+    }
+
+    delete [] fPath;
+    delete [] sPath;
+}
+
+void executeCp(string * fParam, string * sParam) {
+    
+    char * fPath = new char[fParam->length() + 1];
+    strcpy(fPath, fParam->c_str());
+    
+    char * sPath = new char[sParam->length() + 1];
+    strcpy(sPath, sParam->c_str());
+    
+    int32_t fileMftItemIndex, toMftitemIndex;
+    Path tempPath = *currentPath;
+    if (tempPath.change(fPath, false)) {
+        fileMftItemIndex = tempPath.getCurrentMftIndex();
+        Path tempPath = *currentPath;
+        if (tempPath.change(sPath, true)) {
+            pntfs->copy(fileMftItemIndex, tempPath.getCurrentMftIndex());
+        }
+        else {
+           cout << "PATH NOT FOUND"; 
+        }
+    }
+    else {
+        cout << "FILE NOT FOUND";
+    }
+
+    delete [] fPath;
+    delete [] sPath;
 }

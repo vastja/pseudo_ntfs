@@ -66,11 +66,19 @@
             bool const isClusterFree(const int index);
 
             void setMftItem(const int index, const struct mft_item * item);
+            void freeMftItem(const int32_t mftItemIndex);
+            void freeMftItemWithData(const int32_t mftItemIndex);
 
             void setClusterData(const int index, const unsigned char * data, const int size);
             void getClusterData(const int index, unsigned char * data);
+            void clearClusterData(const int startIndex, const int32_t clustersCount);
 
             const int getUid() {return uidCounter++;};
+            void removeUidFromDirectory(const int32_t directoryMftitemIndex, int32_t uid);
+            void removeUid(const int32_t destinationMftItemIndex, int32_t uid);
+            bool saveUid(int32_t destinationMftItemIndex, int32_t uid);
+            bool removeUid(int32_t startIndex, int32_t clusterCount, int32_t uid); 
+            bool writeUid(int32_t startIndex, int32_t clusterCount, int32_t uid);
             
             void clearMftItemFragments(mft_fragment * fragments) const;
             int findFreeMft() const;
@@ -83,11 +91,6 @@
             int32_t searchClusters(const int32_t dataClusterStartIndex, const int32_t dataClustersCount, const char * name, const bool directory);
             int32_t searchCluster(const int32_t dataClusterIndex, const char * name, const bool directory); 
             int32_t findMftItemWithProperties(const int32_t uid, const char * name, const bool directory);
-
-            void removeUid(const int32_t destinationMftItemIndex, int32_t uid);
-            bool saveUid(int32_t destinationMftItemIndex, int32_t uid);
-            bool removeUid(int32_t startIndex, int32_t clusterCount, int32_t uid); 
-            bool writeUid(int32_t startIndex, int32_t clusterCount, int32_t uid);
 
             void loadDataFragment(int32_t startIndex, int32_t fragmentCount, std::ostringstream * oss);
 
@@ -118,6 +121,9 @@
 
             void makeDirectory(const int32_t parentMftItemIndex, const char * name);
             void removeDirectory(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex);
+            void move(const int32_t fileMftItemIndex, const int32_t fromMftItemIndex, const int32_t toMftItemIndex);
+            void removeFile(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex);
+            void copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex);
 
             /* TEST FUNCTION */
             void printDisk();
