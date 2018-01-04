@@ -1,5 +1,5 @@
 #include <cstring>
-#include <math.h>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -36,7 +36,7 @@ PseudoNTFS::PseudoNTFS(int32_t diskSize, int32_t clusterSize) : mftItemsCount((d
     bootRecord = (boot_record *) ntfs;
 
     //set start address for parts of disk
-    br.mft_start_address = ((int32_t) ntfs) + sizeof(boot_record);
+    br.mft_start_address = ((int64_t) ntfs) + sizeof(boot_record);
     mftItemStart = (mft_item *) br.mft_start_address;
     br.bitmap_start_address = br.mft_start_address + mftItemsCount * sizeof(mft_item);
     bitmapStart = (unsigned char *) br.bitmap_start_address;
@@ -215,8 +215,9 @@ void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char *
         mftItem.item_order_total = mftItemsCount;
         strcpy(mftItem.item_name, fileName);
         mftItem.item_size = fileLength;
+        
 
-        int8_t counter, dataCounter = 0;
+        int8_t counter = 0, dataCounter = 0;
         int8_t mftItemsLeft = neededMftItemsCount;
         int8_t mftIndex;
 
@@ -226,12 +227,11 @@ void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char *
             
             if (counter == 0) {
                 mftIndex = findFreeMft();
-                freeMftItems--;
                 clearMftItemFragments(mftItem.fragments);  
             }
 
             mftItem.fragments[counter].fragment_start_address = item.startIndex;
-            mftItem.fragments[counter].fragment_count = item.size / bootRecord->cluster_size;
+            mftItem.fragments[counter].fragment_count = ceil(item.size / (double) bootRecord->cluster_size);
             saveContinualSegment(fileData + dataCounter, item.size, item.startIndex);
             dataCounter += item.size;
 
@@ -347,7 +347,7 @@ void PseudoNTFS::findFreeSpace(const int32_t demandedSize, int32_t * startIndex,
     int32_t maxSize = 0;
     int32_t maxIndex = 0;
 
-    int32_t bound = ceil(bootRecord->cluster_count / 8); 
+    int32_t bound = ceil(bootRecord->cluster_count * bootRecord->cluster_size / 8.0); 
     for (int i = 0; i < bound; i++) {
         if (isClusterFree(i)) {
             if (maxSize == 0) {
@@ -495,8 +495,9 @@ bool PseudoNTFS::saveUid(int32_t destinationMftItemIndex, int32_t uid) {
 bool PseudoNTFS::writeUid(int32_t startIndex, int32_t clusterCount, int32_t uid) {
     
     int32_t * tempUid = (int32_t *)&dataStart[startIndex * bootRecord->cluster_size]; 
+    int32_t bound = clusterCount * bootRecord->cluster_size / sizeof(int32_t);
 
-    for (int i = 0; i < clusterCount; i++) {
+    for (int i = 0; i < bound; i++) {
         if (tempUid[i] == 0) {
             tempUid[i] = uid;
             return true;
@@ -588,9 +589,6 @@ void PseudoNTFS::makeDirectory(const int32_t parentMftItemIndex, const char * na
     if (mftIndex == NOT_FOUND) {
         std::cout << "NOT ENOUGH FREE MFT ITEMS\n";
         return;
-    }
-    else {
-        freeMftItems--;
     }
 
     int32_t demandedSize, providedSize, startIndex;
@@ -719,6 +717,113 @@ void PseudoNTFS::clearClusterData(const int startIndex, const int32_t clustersCo
     for (int i = startIndex; i < clustersCount; i++) {
         setBitmap(i, true);
     }
+}
+
+/* ADVANCE FUNCTIONS */
+
+
+bool PseudoNTFS::checkDiskConsistency() {
+
+    // INIT
+    std::thread slaves[SLAVES_COUNT];
+    sem_init(&semaphore, 0, 1);
+
+    isCorrupted = false;
+    lastCheckedMftItemIndex = 0;
+
+    // consistencyCheckSlave();
+    for (int i = 0; i < SLAVES_COUNT; i++) {
+        
+        slaves[i] = std::thread(&PseudoNTFS::consistencyCheckSlave, this);
+    }
+
+    for (int i = 0; i < SLAVES_COUNT; i++) {
+        slaves[i].join();
+    }
+
+    return !isCorrupted;
+
+}
+
+bool PseudoNTFS::getMftItemsToCheck(int32_t * mftItemStartIndex, int32_t * mftItemEndIndex) {
+
+    bool isWorkToDo = true;
+    sem_wait(&semaphore);
+    if (lastCheckedMftItemIndex >= mftItemsCount) {
+        isWorkToDo = false;
+    }
+    else {
+        *mftItemStartIndex = lastCheckedMftItemIndex;
+        std::cout << "START INDEX: " << *mftItemStartIndex << std::endl;
+        *mftItemEndIndex = lastCheckedMftItemIndex + MFT_ITEMS_PER_SLAVE;
+         std::cout << "END INDEX: " << *mftItemEndIndex << std::endl;
+        lastCheckedMftItemIndex += MFT_ITEMS_PER_SLAVE; 
+    }
+    sem_post(&semaphore);
+    return isWorkToDo;
+
+}
+
+void PseudoNTFS::consistencyCheckSlave() {
+
+    struct mft_item * mftItem = mftItemStart;
+    int32_t mftItemStartIndex, mftItemEndIndex, size;
+    int32_t (PseudoNTFS::*checkDataFragmentUsedSize)(int32_t, int32_t) = NULL;
+
+    while (getMftItemsToCheck(&mftItemStartIndex, &mftItemEndIndex)) {
+
+        for (int i = mftItemStartIndex; i < mftItemEndIndex; i++) {
+
+            size = 0;
+            if (mftItem[i].isDirectory) {
+                checkDataFragmentUsedSize = &PseudoNTFS::getDirectoryDataFragmentUsedSize; 
+            }
+            else {
+                checkDataFragmentUsedSize = &PseudoNTFS::getFileDataFragmentUsedSize;
+            }
+
+            for (int j = 0; j < MFT_FRAGMENTS_COUNT; j++) {
+                if (mftItem[i].fragments[j].fragment_count != 0) {
+                    size += (this->*checkDataFragmentUsedSize)(mftItem[i].fragments[j].fragment_start_address, mftItem[i].fragments[j].fragment_count);
+                }
+            }
+
+            if (mftItem[i].item_size != size) {
+                isCorrupted = true;
+            }
+        }
+    }
+
+}
+
+int32_t PseudoNTFS::getFileDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount) {
+
+    unsigned char * dataCluster = &dataStart[dataClusterStartIndex * bootRecord->cluster_size];
+
+    int32_t size = 0;
+    for (int i = 0; i < dataClustersCount * bootRecord->cluster_size; i++) {
+        if (dataCluster[i] != 0) {
+            size++;
+        }
+    }
+
+    return size;
+}
+
+int32_t PseudoNTFS::getDirectoryDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount) {
+
+    int32_t * dataCluster = (int32_t *) &dataStart[dataClusterStartIndex * bootRecord->cluster_size];
+
+    int32_t bound = dataClustersCount * bootRecord->cluster_size / sizeof(int32_t);
+
+    int32_t size = 0;
+    for (int i = 0; i < bound; i++) {
+        if (dataCluster[i] != 0) {
+            size += sizeof(int32_t);
+        }
+    }
+
+    return size;
 }
 
 /* TEST FUNCTIONS */

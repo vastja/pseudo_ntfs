@@ -8,7 +8,7 @@
             "type": "shell",
             "command": "g++",
             "args": [
-                "-g", "-o", "PseudoNTFS.exe", "-std=c++11", "PseudoNTFS.cpp", "Launcher.cpp", "Utils.cpp", "Path.cpp"
+                "-g", "-o", "PseudoNTFS.exe", "-std=c++11", "-pthread", "PseudoNTFS.cpp", "Launcher.cpp", "Utils.cpp", "Path.cpp"
             ],
             "group": {
                 "kind": "build",

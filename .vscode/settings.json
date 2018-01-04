@@ -37,6 +37,18 @@
         "xlocnum": "cpp",
         "xmemory0": "cpp",
         "list": "cpp",
-        "xmemory": "cpp"
+        "xmemory": "cpp",
+        "array": "cpp",
+        "*.tcc": "cpp",
+        "cctype": "cpp",
+        "chrono": "cpp",
+        "clocale": "cpp",
+        "ctime": "cpp",
+        "cwctype": "cpp",
+        "functional": "cpp",
+        "memory": "cpp",
+        "ratio": "cpp",
+        "thread": "cpp",
+        "tuple": "cpp"
     }
 }

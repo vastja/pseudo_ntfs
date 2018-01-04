@@ -4,6 +4,8 @@
 #include <iostream>
 #include <fstream>
 #include <list>
+#include <thread>
+#include <semaphore.h>
 
     const int32_t UID_ITEM_FREE = 0;
     const int32_t MFT_FRAGMENTS_COUNT = 32;
@@ -14,9 +16,9 @@
         int32_t disk_size;              //celkova velikost VFS
         int32_t cluster_size;           //velikost clusteru
         int32_t cluster_count;          //pocet clusteru
-        int32_t mft_start_address;      //adresa pocatku mft
-        int32_t bitmap_start_address;   //adresa pocatku bitmapy
-        int32_t data_start_address;     //adresa pocatku datovych bloku
+        int64_t mft_start_address;      //adresa pocatku mft
+        int64_t bitmap_start_address;   //adresa pocatku bitmapy
+        int64_t data_start_address;     //adresa pocatku datovych bloku
         int32_t mft_max_fragment_count; //maximalni pocet fragmentu v jednom zaznamu v mft (pozor, ne souboru)
                                         // stejne jako   MFT_FRAGMENTS_COUNT
     };
@@ -46,6 +48,16 @@
     class PseudoNTFS {
 
         private:
+            // CONSISTENCY CHECK PROPERTIES 
+            const int SLAVES_COUNT = 4;
+            const int MFT_ITEMS_PER_SLAVE = 1;
+            bool isCorrupted;
+
+            sem_t semaphore;
+
+            int32_t lastCheckedMftItemIndex = 0;
+            // -------------------------------- 
+
             unsigned char * ntfs;
             const int32_t mftItemsCount;
             int32_t uidCounter;
@@ -99,6 +111,11 @@
 
             bool isDirEmpty(const int32_t mftItemIndex);
 
+            /* ADVANCE FUNCTIONS */
+            void consistencyCheckSlave();
+            bool getMftItemsToCheck(int32_t * mftItemStartIndex, int32_t * mftItemEndIndex);
+            int32_t getFileDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount);
+            int32_t getDirectoryDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount);
             /* TEST FUNCTION */
             void printBootRecord(std::ofstream * output) const;
             void printMftItem(mft_item * mftItem, std::ofstream * output) const;
@@ -124,7 +141,8 @@
             void move(const int32_t fileMftItemIndex, const int32_t fromMftItemIndex, const int32_t toMftItemIndex);
             void removeFile(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex);
             void copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex);
-
+            /* ADVANCE */
+            bool checkDiskConsistency();
             /* TEST FUNCTION */
             void printDisk();
             void printMftItemInfo(const mft_item * mftItem);

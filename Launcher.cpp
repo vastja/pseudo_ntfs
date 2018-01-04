@@ -40,8 +40,16 @@ int main(int argc, char * argv[]) {
         if (command == "EXIT" || command == "exit") {
             break;
         }
-        else if (command == "PRINT-DISK" || command == "print-disk") {
+        else if (command == "PDISK" || command == "pdisk") {
             pntfs->printDisk();
+        }
+        else if (command == "chdisk") {
+            if (pntfs->checkDiskConsistency()) {
+                cout << ">> DISK IS OK";
+            }
+            else {
+                cout << "DISK IS CORRUPTED";
+            }
         }
 
         cout << ">> ";
