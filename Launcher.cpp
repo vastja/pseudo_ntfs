@@ -4,7 +4,7 @@
 #include "PseudoNTFS.hpp"
 #include "Path.hpp"
 
-const int32_t DISK_SIZE = 10000;
+const int32_t DISK_SIZE = 100000;
 const int32_t CLUSTER_SIZE = 100; 
 
 Path * currentPath;
@@ -50,6 +50,9 @@ int main(int argc, char * argv[]) {
             else {
                 cout << "DISK IS CORRUPTED";
             }
+        }
+        else if (command == "ddisk") {
+            pntfs->defragmentDisk();
         }
 
         cout << ">> ";

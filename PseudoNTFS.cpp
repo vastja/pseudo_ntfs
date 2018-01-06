@@ -178,7 +178,7 @@ void PseudoNTFS::getClusterData(const int index, unsigned char * data) {
 void PseudoNTFS::prepareMftItems(std::list<struct data_seg> * dataSegmentList, int32_t demandedSize) {
 
         struct data_seg dataSegment;
-        int32_t index, providedSize = 0;
+        int32_t index = 0, providedSize = 0;
 
         do {
             findFreeSpace(demandedSize, &index, &providedSize);
@@ -335,17 +335,19 @@ int PseudoNTFS::findFreeMft() const {
     return NOT_FOUND;
 }
 
-/*
-demandedSize - size we need to save whole file
-startIndex - index to cluster data segment
-providedSize - meximal continual free space
-*/
+
 void PseudoNTFS::findFreeSpace(const int32_t demandedSize, int32_t * startIndex, int32_t * providedSize) {
 
     *providedSize = 0;
     
     int32_t maxSize = 0;
     int32_t maxIndex = 0;
+
+    if (*startIndex < 0 || *startIndex >= bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return;
+    }
+
 
     int32_t bound = ceil(bootRecord->cluster_count * bootRecord->cluster_size / 8.0); 
     for (int i = 0; i < bound; i++) {
@@ -371,13 +373,14 @@ void PseudoNTFS::findFreeSpace(const int32_t demandedSize, int32_t * startIndex,
     }
 }
 
-/*
-startIndex - index to cluster data segment
-size - size of data for save
-data - start of data to be saved
-*/
+
 void PseudoNTFS::saveContinualSegment(const char * data, const int32_t size, const int32_t startIndex) {
     
+    if (startIndex < 0 || startIndex >= bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return;
+    }
+
     int32_t bound = size / bootRecord->cluster_size;
     int32_t left = size;
     
@@ -456,6 +459,11 @@ int32_t PseudoNTFS::findMftItemWithProperties(const int32_t uid, const char * na
 
 bool PseudoNTFS::saveUid(int32_t destinationMftItemIndex, int32_t uid) {
 
+    if (destinationMftItemIndex < 0 || destinationMftItemIndex > mftItemsCount) {
+        indexOutOfRange = true;
+        return false;
+    }
+
     struct mft_item * mftItem = &mftItemStart[destinationMftItemIndex];
 
     int32_t fragmentCount;
@@ -494,6 +502,11 @@ bool PseudoNTFS::saveUid(int32_t destinationMftItemIndex, int32_t uid) {
 
 bool PseudoNTFS::writeUid(int32_t startIndex, int32_t clusterCount, int32_t uid) {
     
+    if (startIndex < 0 || startIndex >= bootRecord->cluster_count || startIndex + clusterCount > bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return false;
+    }
+
     int32_t * tempUid = (int32_t *)&dataStart[startIndex * bootRecord->cluster_size]; 
     int32_t bound = clusterCount * bootRecord->cluster_size / sizeof(int32_t);
 
@@ -591,7 +604,7 @@ void PseudoNTFS::makeDirectory(const int32_t parentMftItemIndex, const char * na
         return;
     }
 
-    int32_t demandedSize, providedSize, startIndex;
+    int32_t demandedSize, providedSize, startIndex = 0;
 
     demandedSize = bootRecord->cluster_size;
     findFreeSpace(demandedSize, &startIndex, &providedSize);
@@ -654,7 +667,7 @@ void PseudoNTFS::freeMftItem(const int32_t mftItemIndex) {
 
 void PseudoNTFS::freeMftItemWithData(const int32_t mftItemIndex) {
 
-    if (mftItemIndex < 0 || mftItemIndex > mftItemsCount) {
+    if (mftItemIndex < 0 || mftItemIndex >= mftItemsCount) {
         indexOutOfRange = true;
         return;
     }
@@ -672,6 +685,11 @@ void PseudoNTFS::freeMftItemWithData(const int32_t mftItemIndex) {
 
 void PseudoNTFS::removeUidFromDirectory(const int32_t directoryMftItemIndex, int32_t uid) {
 
+    if (directoryMftItemIndex < 0 || directoryMftItemIndex >= mftItemsCount) {
+        indexOutOfRange = true;
+        return;
+    }
+
     struct mft_item * mftItem = &mftItemStart[directoryMftItemIndex];
 
     for (int i =0; i < MFT_FRAGMENTS_COUNT; i++) {
@@ -683,7 +701,12 @@ void PseudoNTFS::removeUidFromDirectory(const int32_t directoryMftItemIndex, int
 }
 
 bool PseudoNTFS::removeUid(int32_t startIndex, int32_t clusterCount, int32_t uid) {
-    
+   
+    if (startIndex < 0 || startIndex >= bootRecord->cluster_count || startIndex + clusterCount > bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return false;
+    }
+
     int32_t * tempUid = (int32_t *)&dataStart[startIndex * bootRecord->cluster_size]; 
 
     for (int i = 0; i < clusterCount; i++) {
@@ -725,7 +748,7 @@ void PseudoNTFS::clearClusterData(const int startIndex, const int32_t clustersCo
     memset(&dataStart[startIndex * bootRecord->cluster_size], 0, clustersCount * bootRecord->cluster_size);
 
     for (int i = startIndex; i < clustersCount; i++) {
-        setBitmap(i, true);
+        setBitmap(i, false);
     }
 }
 
@@ -837,23 +860,60 @@ int32_t PseudoNTFS::getDirectoryDataFragmentUsedSize(int32_t dataClusterStartInd
 /* DEFRAGMENTATION */
 void PseudoNTFS::defragmentDisk() {
     
-    int32_t * indexTable = new int32_t[bootRecord->cluster_count]{-1};
+    int32_t * indexTable = new int32_t[bootRecord->cluster_count];
     prepareIndexTable(indexTable);
+
+    // for (int i = 0; i < bootRecord->cluster_count; i++) {
+    //     std::cout <<  indexTable[i] << " ";
+    // }
 
     for (int i = 0; i < bootRecord->cluster_count; i++) {
         defragment(indexTable, i);
     }
-    
 
+    initBitmap();
+    defragmentUpdateMftTable();
+    
+    delete [] indexTable;
 }
 
-void PseudoNTFS::prepareIndexTable(int32_t indextable[]) {
+void PseudoNTFS::defragmentUpdateMftTable() {
+    struct mft_item * mftItem = mftItemStart;
+
+    int32_t start = 0, count;
+
+    for (int i = 0; i < mftItemsCount; i++) {
+        count = ceil(mftItem[i].item_size / (double) bootRecord->cluster_size);
+
+        clearMftItemFragments(mftItem[i].fragments);
+        mftItem[i].fragments[0].fragment_start_address = start;
+        mftItem[i].fragments[0].fragment_count = count;
+       
+        for (int j = start; j < start + count; j++) {
+            setBitmap(j, true);
+        }
+
+         start += count;
+    }
+}
+
+void PseudoNTFS::prepareIndexTable(int32_t indexTable[]) {
 
     int32_t indexer = 0;
     struct mft_item * mftItem = mftItemStart;
+
+    for (int i = 0; i < bootRecord->cluster_count; i++) {
+        indexTable[i] = -1;
+    }
+
     for (int i = 0; i < mftItemsCount; i++) {
         
+        if (mftItem[i].item_size == 0) {
+                continue;
+        }
+
         for (int j = 0; j < MFT_FRAGMENTS_COUNT; j++) {
+
             if (mftItem[i].fragments[j].fragment_count != 0) {
                 fillIndexTable(indexTable, mftItem[i].fragments[j].fragment_start_address, mftItem[i].fragments[j].fragment_count, indexer);
                 indexer += mftItem[i].fragments[j].fragment_count;
@@ -862,38 +922,42 @@ void PseudoNTFS::prepareIndexTable(int32_t indextable[]) {
 
     }
 
+   
 }
 
 void PseudoNTFS::fillIndexTable(int32_t indexTable[] ,const int32_t startIndex, const int32_t count, const int32_t startWithIndex) {
 
     int32_t index = startWithIndex;
-    for (int i = startIndex; i < count; i++) {
+    for (int i = startIndex; i < startIndex + count; i++) {
         indexTable[i] = index++;
     }
 }
 
 void PseudoNTFS::defragment(int32_t indexTable[], int32_t checkIndex) {
     
-    int32_t swapIndex;
+    if (indexTable[checkIndex] == checkIndex || indexTable[checkIndex] == -1)  {
+        return;
+    }
+
+    int32_t swapIndex, t;
 
     unsigned char * swap = new unsigned char[bootRecord->cluster_size];
     unsigned char * copy = new unsigned char[bootRecord->cluster_size];
     unsigned char * temp; 
 
-    if (indexTable[checkIndex] == checkIndex) {
-        return;
-    }
-    else {
+   
+   
 
         swapIndex = indexTable[checkIndex];
         getClusterData(swapIndex, swap);
         getClusterData(checkIndex, copy);
         setClusterData(swapIndex, copy, bootRecord->cluster_size);
 
+        t = indexTable[swapIndex];
         indexTable[swapIndex] = checkIndex;
-        indexTable[checkIndex] = swapIndex;
+        indexTable[checkIndex] = t;
         
-        while (checkIndex != indexTable[checkIndex]) {
+        while (checkIndex != indexTable[checkIndex] && t != -1) {
 
             swapIndex = indexTable[checkIndex];
 
@@ -904,13 +968,15 @@ void PseudoNTFS::defragment(int32_t indexTable[], int32_t checkIndex) {
             getClusterData(swapIndex, swap);
             setClusterData(swapIndex, copy, bootRecord->cluster_size);
 
+            t = indexTable[swapIndex];
             indexTable[swapIndex] = checkIndex;
             indexTable[checkIndex] = swapIndex;
         };
 
         setClusterData(checkIndex, swap, bootRecord->cluster_size);
-    }
-
+    
+    delete [] swap;
+    delete [] copy;
 }
 
 /* TEST FUNCTIONS */

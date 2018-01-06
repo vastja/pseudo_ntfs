@@ -59,66 +59,151 @@
             int32_t lastCheckedMftItemIndex = 0;
             // -------------------------------- 
 
-            unsigned char * ntfs;
+            /* internal variables */
             const int32_t mftItemsCount;
             int32_t uidCounter;
 
+            /* infromations about free space and mft items*/
             int32_t freeSpace;
             int32_t freeMftItems;
 
+            /* starts of important disk parts*/
+            unsigned char * ntfs;
             struct boot_record * bootRecord;
             struct mft_item * mftItemStart;
             unsigned char * bitmapStart;
             unsigned char * dataStart;
             
-            // global flag for index out of range 
-            // set in case you pass to function invalid disk index
+            /* global flag for index out of range 
+             * set in case you pass to function invalid disk index
+            */
             bool indexOutOfRange;
 
             // initialize mft items to be free
             void initMft();
-            // initialize bitmap to be free
+            /* initialize bitmap to be free
+            */
             void initBitmap();
-            // set free/use for data cluster
-            // can set index out of borders flag
-            // @param index - data cluster index
-            // @param value - free - false, used - true   
+            /* set free/use for data cluster
+             * can set index out of borders flag
+             * +param index - data cluster index
+             * +param value - free - false, used - true  
+            */ 
             void setBitmap(const int index, const bool value);
-            // can set index out of borders flag
-            // @return free - true, used - false
+            /* can set index out of borders flag
+             * +return free - true, used - false
+            */
             bool const isClusterFree(const int index);
 
-            // save mft item to mft items table
-            // can set index out of borders flag
-            // @param index - mft items table index
-            // @param item - pointer to mft items we want to save to mft table
+            /* save mft item to mft items table
+             * can set index out of borders flag
+             * +param index - mft items table index
+             * +param item - pointer to mft items we want to save to mft table
+            */
             void setMftItem(const int index, const struct mft_item * item);
-            // free mft item from mft item table
-            // can set index out of borders flag
-            // @param mftItemIndex - index in mft items table
+            /* free mft item from mft item table
+             * can set index out of borders flag
+             * param mftItemIndex - index in mft items table
+            */
             void freeMftItem(const int32_t mftItemIndex);
-            // free mft item from mft item table and clear its data clusters
-            // can set index out of borders flag
-            // @param mftItemIndex - index in mft items table
+            /* free mft item from mft item table and clear its data clusters
+             * can set index out of borders flag
+             * +param mftItemIndex - index in mft items table
+            */
             void freeMftItemWithData(const int32_t mftItemIndex);
 
+            /* set data in data cluster
+             * can set index out of borders flag
+             * +param index - data cluster index
+             * +param data - data to be saved
+             * +param size - count of bytes to be saved
+            */
             void setClusterData(const int index, const unsigned char * data, const int size);
+            /* get data from data cluster
+             * can set index out of borders flag
+             * +param index - data cluster we get data from
+             * +param data - here will be data form data cluster saved
+            */
             void getClusterData(const int index, unsigned char * data);
+            /* clear data cluster
+             * can set index out of borders flag
+             * +param - startIndex - data cluster index
+             * +param - clustersCount - how many data cluster from given index
+            */
             void clearClusterData(const int startIndex, const int32_t clustersCount);
 
+            /* return UID
+             * +return - UID 
+            */
             const int getUid() {return uidCounter++;};
-            void removeUidFromDirectory(const int32_t directoryMftitemIndex, int32_t uid);
-            void removeUid(const int32_t destinationMftItemIndex, int32_t uid);
+            /* remove UID from directory
+             * can set index out of borders flag
+             * + param - directoryMftItemIndex - index of directory mft item in mft items table, we want to remove UID from
+             * +param - uid - UID to be removed
+            */
+            void removeUidFromDirectory(const int32_t directoryMftItemIndex, int32_t uid);
+            /* save UID to given mft item data clusters
+             * can set index out of borders flag
+             * +param - destinationMftItemIndex - mft item where should be UID saved
+             * +param - uid - UID to be saved
+            */
             bool saveUid(int32_t destinationMftItemIndex, int32_t uid);
+            /* try to remove UID from data cluster, in case given UID is there
+             * can set index out of borders flag
+             * +param - startIndex - index of first data cluster
+             * +param - clusterCount - count of culuster to be searched
+             * +param - uid - UID to be deleted
+             * +return true - given uid was found in given data clusters range and deleted, else false
+            */
             bool removeUid(int32_t startIndex, int32_t clusterCount, int32_t uid); 
+            /* try to write UID to data cluster, in case there is enough free space
+             * can set index out of borders flag
+             * +param - startIndex - index of first data cluster
+             * +param - clusterCount - count of culuster to be searched
+             * +param - uid - UID to be saved
+             * +return true - given uid was saved, else false
+            */
             bool writeUid(int32_t startIndex, int32_t clusterCount, int32_t uid);
             
+            /* clear mft fragments
+             * +param - fragments - array of mft fragments
+            */
             void clearMftItemFragments(mft_fragment * fragments) const;
+            /* find free mft item
+            */
             int findFreeMft() const;
+            /* count how many mft items we need to save given count of data clusters
+             * +param - dataClustersCount - count of data clusters we need to save
+             * +return count of needed mft fragment to save given count of data clusters, or NOT_FOUND
+            */
             int neededMftItems(int8_t dataClustersCount) const;
+            /* find maximal continula free space in bytes
+             * can set index out of borders flag
+             * +param - demandedSize - ideal length of continual free space in bytes
+             * +param - startIndex - index of first data cluster in found free space
+             * +param - providedSize - found maximal continual free space 
+            */
             void findFreeSpace(const int32_t demandedSize, int32_t * startIndex, int32_t * providedSize);
+            /* save continula data
+             * can set index out of borders flag
+             * +param - data - data to be saved
+             * +param - size - size of data to be saved in bytes
+             * +param - startIndex - index of first data cluster for data saving
+            */
             void saveContinualSegment(const char * data, const int32_t size, const int32_t startIndex);
+            /* prepare list with data segmets - start index and size in bytes - for demanded data size we want to save
+             * TODO - check find free space not 0
+             * +param - dataSegmentList - list of prepared data segments
+             * +param - demandedSize - size of content to be saved in bytes 
+            */
             void prepareMftItems(std::list<struct data_seg> * dataSegmentList, int32_t demandedSize);
+            /* save file to ntfs
+             * +param - dataSegmentList - list of prepared data segments
+             * +param - fileName - name of file
+             * +param - uid - UID of file
+             * +param - fileData - content of file
+             * +param - fileLength - size of file in bytes
+            */
             void save(std::list<struct data_seg> * dataSegmentList, const char * fileName, int32_t uid, char * fileData, int32_t fileLength);
             
             int32_t searchClusters(const int32_t dataClusterStartIndex, const int32_t dataClustersCount, const char * name, const bool directory);
@@ -138,6 +223,7 @@
             int32_t getFileDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount);
             int32_t getDirectoryDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount);
             // -------------------
+            void defragmentUpdateMftTable();
             void prepareIndextable();
             void prepareIndexTable(int32_t indextable[]);
             void fillIndexTable(int32_t indexTable[] ,const int32_t startIndex, const int32_t count, const int32_t startWithIndex);
