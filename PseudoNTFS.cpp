@@ -634,6 +634,11 @@ void PseudoNTFS::removeDirectory(const int32_t mftItemIndex, const int32_t paren
 
 void PseudoNTFS::freeMftItem(const int32_t mftItemIndex) {
 
+    if (mftItemIndex < 0 || mftItemIndex > mftItemsCount) {
+        indexOutOfRange = true;
+        return;
+    }
+
     struct mft_item * mftItem = &mftItemStart[mftItemIndex];
 
     mftItem->uid = UID_ITEM_FREE;
@@ -648,6 +653,11 @@ void PseudoNTFS::freeMftItem(const int32_t mftItemIndex) {
 }
 
 void PseudoNTFS::freeMftItemWithData(const int32_t mftItemIndex) {
+
+    if (mftItemIndex < 0 || mftItemIndex > mftItemsCount) {
+        indexOutOfRange = true;
+        return;
+    }
 
     struct mft_item * mftItem = &mftItemStart[mftItemIndex];
 
@@ -721,7 +731,7 @@ void PseudoNTFS::clearClusterData(const int startIndex, const int32_t clustersCo
 
 /* ADVANCE FUNCTIONS */
 
-
+/* CONSISTENCY */
 bool PseudoNTFS::checkDiskConsistency() {
 
     // INIT
@@ -754,9 +764,7 @@ bool PseudoNTFS::getMftItemsToCheck(int32_t * mftItemStartIndex, int32_t * mftIt
     }
     else {
         *mftItemStartIndex = lastCheckedMftItemIndex;
-        std::cout << "START INDEX: " << *mftItemStartIndex << std::endl;
         *mftItemEndIndex = lastCheckedMftItemIndex + MFT_ITEMS_PER_SLAVE;
-         std::cout << "END INDEX: " << *mftItemEndIndex << std::endl;
         lastCheckedMftItemIndex += MFT_ITEMS_PER_SLAVE; 
     }
     sem_post(&semaphore);
@@ -824,6 +832,85 @@ int32_t PseudoNTFS::getDirectoryDataFragmentUsedSize(int32_t dataClusterStartInd
     }
 
     return size;
+}
+
+/* DEFRAGMENTATION */
+void PseudoNTFS::defragmentDisk() {
+    
+    int32_t * indexTable = new int32_t[bootRecord->cluster_count]{-1};
+    prepareIndexTable(indexTable);
+
+    for (int i = 0; i < bootRecord->cluster_count; i++) {
+        defragment(indexTable, i);
+    }
+    
+
+}
+
+void PseudoNTFS::prepareIndexTable(int32_t indextable[]) {
+
+    int32_t indexer = 0;
+    struct mft_item * mftItem = mftItemStart;
+    for (int i = 0; i < mftItemsCount; i++) {
+        
+        for (int j = 0; j < MFT_FRAGMENTS_COUNT; j++) {
+            if (mftItem[i].fragments[j].fragment_count != 0) {
+                fillIndexTable(indexTable, mftItem[i].fragments[j].fragment_start_address, mftItem[i].fragments[j].fragment_count, indexer);
+                indexer += mftItem[i].fragments[j].fragment_count;
+            }
+        }
+
+    }
+
+}
+
+void PseudoNTFS::fillIndexTable(int32_t indexTable[] ,const int32_t startIndex, const int32_t count, const int32_t startWithIndex) {
+
+    int32_t index = startWithIndex;
+    for (int i = startIndex; i < count; i++) {
+        indexTable[i] = index++;
+    }
+}
+
+void PseudoNTFS::defragment(int32_t indexTable[], int32_t checkIndex) {
+    
+    int32_t swapIndex;
+
+    unsigned char * swap = new unsigned char[bootRecord->cluster_size];
+    unsigned char * copy = new unsigned char[bootRecord->cluster_size];
+    unsigned char * temp; 
+
+    if (indexTable[checkIndex] == checkIndex) {
+        return;
+    }
+    else {
+
+        swapIndex = indexTable[checkIndex];
+        getClusterData(swapIndex, swap);
+        getClusterData(checkIndex, copy);
+        setClusterData(swapIndex, copy, bootRecord->cluster_size);
+
+        indexTable[swapIndex] = checkIndex;
+        indexTable[checkIndex] = swapIndex;
+        
+        while (checkIndex != indexTable[checkIndex]) {
+
+            swapIndex = indexTable[checkIndex];
+
+            temp = copy;
+            copy = swap;
+            swap = copy;
+
+            getClusterData(swapIndex, swap);
+            setClusterData(swapIndex, copy, bootRecord->cluster_size);
+
+            indexTable[swapIndex] = checkIndex;
+            indexTable[checkIndex] = swapIndex;
+        };
+
+        setClusterData(checkIndex, swap, bootRecord->cluster_size);
+    }
+
 }
 
 /* TEST FUNCTIONS */

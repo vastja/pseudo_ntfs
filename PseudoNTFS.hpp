@@ -48,6 +48,7 @@
     class PseudoNTFS {
 
         private:
+
             // CONSISTENCY CHECK PROPERTIES 
             const int SLAVES_COUNT = 4;
             const int MFT_ITEMS_PER_SLAVE = 1;
@@ -69,16 +70,36 @@
             struct mft_item * mftItemStart;
             unsigned char * bitmapStart;
             unsigned char * dataStart;
-
+            
+            // global flag for index out of range 
+            // set in case you pass to function invalid disk index
             bool indexOutOfRange;
 
+            // initialize mft items to be free
             void initMft();
+            // initialize bitmap to be free
             void initBitmap();
+            // set free/use for data cluster
+            // can set index out of borders flag
+            // @param index - data cluster index
+            // @param value - free - false, used - true   
             void setBitmap(const int index, const bool value);
+            // can set index out of borders flag
+            // @return free - true, used - false
             bool const isClusterFree(const int index);
 
+            // save mft item to mft items table
+            // can set index out of borders flag
+            // @param index - mft items table index
+            // @param item - pointer to mft items we want to save to mft table
             void setMftItem(const int index, const struct mft_item * item);
+            // free mft item from mft item table
+            // can set index out of borders flag
+            // @param mftItemIndex - index in mft items table
             void freeMftItem(const int32_t mftItemIndex);
+            // free mft item from mft item table and clear its data clusters
+            // can set index out of borders flag
+            // @param mftItemIndex - index in mft items table
             void freeMftItemWithData(const int32_t mftItemIndex);
 
             void setClusterData(const int index, const unsigned char * data, const int size);
@@ -116,6 +137,11 @@
             bool getMftItemsToCheck(int32_t * mftItemStartIndex, int32_t * mftItemEndIndex);
             int32_t getFileDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount);
             int32_t getDirectoryDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount);
+            // -------------------
+            void prepareIndextable();
+            void prepareIndexTable(int32_t indextable[]);
+            void fillIndexTable(int32_t indexTable[] ,const int32_t startIndex, const int32_t count, const int32_t startWithIndex);
+            void defragment(int32_t indexTable[], int32_t checkIndex); 
             /* TEST FUNCTION */
             void printBootRecord(std::ofstream * output) const;
             void printMftItem(mft_item * mftItem, std::ofstream * output) const;
@@ -143,6 +169,7 @@
             void copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex);
             /* ADVANCE */
             bool checkDiskConsistency();
+            void defragmentDisk();
             /* TEST FUNCTION */
             void printDisk();
             void printMftItemInfo(const mft_item * mftItem);
