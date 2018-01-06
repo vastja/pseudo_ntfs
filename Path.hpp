@@ -55,13 +55,41 @@
         
         Path & operator=(const Path & path);
 
+        /* change path to file/directory
+         * CHANGE current path if given path exists
+         * +param - path - change path to this path
+         * +param - isDirectory - true - path points to directory, else false
+         * +retun - true - file exists, else false
+        */
         bool change(char * path, bool isDirectory);
+        /* go from current path into file/directory
+         * CHANGE current path if file/directory exist
+         * +param - name - file/directory name
+         * +param - isDirectory - true - directory, else false
+         * +return - file/directory exists
+        */ 
         bool goInto(const char * name, const bool isDirectory);
+        /* go back in current path one step
+        */
         bool goBack();
+        /* get mft index of current file/directory
+         * +return - mft index of current path of file/directory
+        */
         int32_t getCurrentMftIndex();
+
+        /* print path */
         void printPath();
 
+        /* get name of file/folder from path
+         * +param - path - path
+         * +param - fileName - searched file/directory name  
+        */
         static void getNameFromPath(const char * path, char * fileName);
+         /* get name of file/folder from path and parent directory path
+         * +param - path - path
+         * +param - fileName - searched file/directory name 
+         * +param - parentDirectoryPath - path fo file/directory parent directory
+        */
         static void getNameFromPath(const char * path, char * fileName, std::string * parentDirectoryPath);    
     };
 

@@ -248,6 +248,11 @@ void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char *
 
 void PseudoNTFS::saveFileToPseudoNtfs(const char * fileName, const char * filePath, int32_t parentDirectoryMftIndex) {
 
+        if (contains(parentDirectoryMftIndex, fileName, false)) {
+            std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS\n";
+            return;
+        }
+
         std::string fileData;
         if (!readFile(filePath, &fileData)) {
             std::cout << "FILE NOT FOUND";
@@ -278,6 +283,11 @@ void PseudoNTFS::saveFileToPseudoNtfs(const char * fileName, const char * filePa
 void PseudoNTFS::copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex) {
 
         struct mft_item * mftItem = &mftItemStart[fileMftItemIndex];
+
+        if (contains(toMftItemIndex, mftItem->item_name, false)) {
+            std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS IN DESTINATION DIRECTORY\n";
+            return;
+        }
 
         std::string content;
         loadFileFromPseudoNtfs(fileMftItemIndex, &content);
@@ -592,6 +602,11 @@ int32_t PseudoNTFS::findMftItemWithUid(const int32_t uid) {
 
 void PseudoNTFS::makeDirectory(const int32_t parentMftItemIndex, const char * name) {
 
+    if (contains(parentMftItemIndex, name, true)) {
+        std::cout << "DIRECTORY WITH GIVEN NAME ALREADY EXISTS\n";
+        return;
+    }
+
     if (freeSpace < bootRecord->cluster_size) {
         std::cout << "NOT ENOUGH FREE SPACE\n";
         return;
@@ -722,6 +737,11 @@ bool PseudoNTFS::removeUid(int32_t startIndex, int32_t clusterCount, int32_t uid
 void PseudoNTFS::move(const int32_t fileMftItemIndex, const int32_t fromMftItemIndex, const int32_t toMftItemIndex) {
 
     struct mft_item * mftItem = &mftItemStart[fileMftItemIndex];
+
+    if (contains(toMftItemIndex, mftItem->item_name, false)) {
+        std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS IN DESTINATION DIRECTORY\n";
+        return;
+    }
 
     if (saveUid(toMftItemIndex, mftItem->uid)) {
         removeUidFromDirectory(fromMftItemIndex, mftItem->uid);

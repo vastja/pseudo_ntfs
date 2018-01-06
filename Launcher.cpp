@@ -12,6 +12,7 @@ PseudoNTFS * pntfs;
 
 using namespace std;
 
+/* functions over ntfs */
 void executeCommand(string command);
 void executeCd(string * param);
 void executeIncp(string * fparam, string * sParam);
