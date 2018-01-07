@@ -7,15 +7,15 @@
 #include "PseudoNTFS.hpp"
 #include "Utils.hpp"
 
-PseudoNTFS::PseudoNTFS(int32_t diskSize, int32_t clusterSize) : mftItemsCount((diskSize * 0.1) / sizeof(mft_item)) {
+PseudoNTFS::PseudoNTFS(const int32_t diskSize, const int32_t clusterSize, const char * signature) : mftItemsCount((diskSize * 0.1) / sizeof(mft_item)) {
 
     // initialize uid counter to 0
     uidCounter = 1;
     
     struct boot_record br;
     // set signature and description of volume
-    strcpy(br.signature, "vastja");
-    strcpy(br.volume_descriptor, "descripton");
+    strcpy(br.signature, signature);
+    strcpy(br.volume_descriptor, "KIV/ZOS\nvastja\nA15B0150P\nvastja@students.zcu.cz\n2017-18");
 
     br.disk_size = diskSize;
     br.cluster_size = clusterSize;
@@ -138,14 +138,24 @@ void PseudoNTFS::setMftItem(const int index, const struct mft_item * item) {
     freeMftItems--;
 }
 
-mft_item * PseudoNTFS::getMftItem(const int index) {
+void PseudoNTFS::printMftItem(const int index) {
 
     if (index < 0 || index > mftItemsCount - 1) {
         indexOutOfRange = true;
-        return NULL;
     }
 
-    return &mftItemStart[index];
+    std::cout << "UID: " << mftItemStart[index].uid << std::endl;
+    std::cout << "Name: " <<  mftItemStart[index].item_name << std::endl;
+    std::cout << "Is directory: " <<  mftItemStart[index].isDirectory << std::endl;
+    std::cout << "Item size: " << (int)  mftItemStart[index].item_size << std::endl;
+    std::cout << "Item order: " << (int)  mftItemStart[index].item_order << std::endl;
+    std::cout << "Item order total: " << (int)  mftItemStart[index].item_order_total << std::endl;
+
+    std::cout << "Fragments - i - start adress - count" << std::endl;
+    for (int i = 0; i < MFT_FRAGMENTS_COUNT; i++) {
+         std::cout << i << " - " <<  mftItemStart[index].fragments[i].fragment_start_address << " - " <<  mftItemStart[index].fragments[i].fragment_count << std::endl;
+    }
+    
 }
 
 void PseudoNTFS::setClusterData(const int index, const unsigned char * data, const int size) {
@@ -197,14 +207,14 @@ void PseudoNTFS::prepareMftItems(std::list<struct data_seg> * dataSegmentList, i
         } while (demandedSize > 0);
 }
 
-void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char * fileName, int32_t uid, char * fileData, int32_t fileLength) {
+bool PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char * fileName, int32_t uid, char * fileData, int32_t fileLength) {
 
         int8_t dataClustersCount = dataSegmentList->size();
        
         int8_t neededMftItemsCount = neededMftItems(dataClustersCount);
         if (neededMftItemsCount > freeMftItems) {
             std::cout << "NOT ENOUGH FREE ITEMS";
-            return;
+            return false;
         }
         
         // Prepare struct to save
@@ -244,19 +254,31 @@ void PseudoNTFS::save(std::list<struct data_seg> * dataSegmentList, const char *
         }
         setMftItem(mftIndex, &mftItem);
 
+        return true;
+
 }
 
-void PseudoNTFS::saveFileToPseudoNtfs(const char * fileName, const char * filePath, int32_t parentDirectoryMftIndex) {
+bool PseudoNTFS::saveFileToPseudoNtfs(const char * fileName, const char * filePath, int32_t parentDirectoryMftIndex) {
 
-        if (contains(parentDirectoryMftIndex, fileName, false)) {
-            std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS\n";
-            return;
+        if (parentDirectoryMftIndex < 0 || parentDirectoryMftIndex  >= mftItemsCount) {
+            indexOutOfRange = true;
+            return false;
+        }
+
+        if (contains(parentDirectoryMftIndex, fileName, false) != NOT_FOUND) {
+            std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS IN THIS DIRECTORY";
+            return false;
+        }
+
+        if (contains(parentDirectoryMftIndex, fileName, true) != NOT_FOUND) {
+            std::cout << "DIRECTORY WITH GIVEN NAME ALREADY EXISTS IN THIS DIRECTORY";
+            return false;
         }
 
         std::string fileData;
         if (!readFile(filePath, &fileData)) {
             std::cout << "FILE NOT FOUND";
-            return;
+            return false;
         }
         // No end char - we only store values to save
         int len = fileData.length();
@@ -266,27 +288,37 @@ void PseudoNTFS::saveFileToPseudoNtfs(const char * fileName, const char * filePa
         
         if (len > freeSpace) {
             std::cout << "NOT ENOUGH FREE SPACE";
-            return;
+            return false;
         };
     
         int32_t uid = getUid();
         if (!saveUid(parentDirectoryMftIndex, uid)) {
             std::cout << "NOT ENOUGH FREE SPACE";
-            return;
+            return false;
         }
 
         std::list<struct data_seg> dataSegmentList;
         prepareMftItems(&dataSegmentList, len);
-        save(&dataSegmentList, fileName, uid, data, len);
+        return save(&dataSegmentList, fileName, uid, data, len);
 }
 
-void PseudoNTFS::copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex) {
+bool PseudoNTFS::copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex) {
+
+        if (fileMftItemIndex < 0 || fileMftItemIndex >= mftItemsCount || toMftItemIndex < 0 || toMftItemIndex >= mftItemsCount ) {
+            indexOutOfRange = true;
+            return false;
+        }
 
         struct mft_item * mftItem = &mftItemStart[fileMftItemIndex];
 
-        if (contains(toMftItemIndex, mftItem->item_name, false)) {
-            std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS IN DESTINATION DIRECTORY\n";
-            return;
+        if (contains(toMftItemIndex, mftItem->item_name, false) != NOT_FOUND) {
+            std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS IN DESTINATION DIRECTORY";
+            return false;
+        }
+
+        if (contains(toMftItemIndex, mftItem->item_name, true) != NOT_FOUND) {
+            std::cout << "DIRECTORY WITH GIVEN NAME ALREADY EXISTS IN DESTINATION DIRECTORY";
+            return false;
         }
 
         std::string content;
@@ -299,18 +331,18 @@ void PseudoNTFS::copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex) {
         
         if (len > freeSpace) {
             std::cout << "NOT ENOUGH FREE SPACE";
-            return;
+            return false;
         };
 
         int32_t uid = getUid();
         if (!saveUid(toMftItemIndex, uid)) {
             std::cout << "NOT ENOUGH FREE SPACE";
-            return;
+            return false;
         }
 
         std::list<struct data_seg> dataSegmentList;
         prepareMftItems(&dataSegmentList, len);
-        save(&dataSegmentList, mftItem->item_name, uid, data, len);
+        return save(&dataSegmentList, mftItem->item_name, uid, data, len);
 }
 
 void PseudoNTFS::clearMftItemFragments(mft_fragment * fragments) const {
@@ -407,6 +439,11 @@ void PseudoNTFS::saveContinualSegment(const char * data, const int32_t size, con
 
 int32_t PseudoNTFS::contains(const int32_t mftItemIndex, const char * name, const bool directory) {
 
+    if (mftItemIndex < 0 || mftItemIndex  >= mftItemsCount) {
+        indexOutOfRange = true;
+        return NOT_FOUND;
+    }
+
     struct mft_item * mftItem = &mftItemStart[mftItemIndex];
     
     int32_t dataClusterStartIndex, dataClustersCount, searchedMftItemIndex;
@@ -427,6 +464,12 @@ int32_t PseudoNTFS::contains(const int32_t mftItemIndex, const char * name, cons
 int32_t PseudoNTFS::searchClusters(const int32_t dataClusterStartIndex, const int32_t dataClustersCount, const char * name, const bool directory) {
     
     int32_t mftItemIndex;
+
+    if (dataClusterStartIndex < 0 || dataClusterStartIndex + dataClustersCount >= bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return NOT_FOUND;
+    }
+
     for (int32_t i = dataClusterStartIndex; i < dataClusterStartIndex + dataClustersCount; i++) {
         mftItemIndex = searchCluster(i, name, directory);
         if (mftItemIndex != NOT_FOUND) {
@@ -439,6 +482,11 @@ int32_t PseudoNTFS::searchClusters(const int32_t dataClusterStartIndex, const in
 }
 
 int32_t PseudoNTFS::searchCluster(const int32_t dataClusterIndex, const char * name, const bool directory) {
+
+    if (dataClusterIndex < 0 || dataClusterIndex >= bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return NOT_FOUND;
+    }
 
     int maxUidInDataCluster = bootRecord->cluster_size / sizeof(int32_t);
     int32_t * mftItemUid = (int32_t *) &dataStart[dataClusterIndex * bootRecord->cluster_size];
@@ -530,7 +578,12 @@ bool PseudoNTFS::writeUid(int32_t startIndex, int32_t clusterCount, int32_t uid)
     return false;
 }
 
-void PseudoNTFS::loadFileFromPseudoNtfs(int32_t mftItemIndex, std::string * content) {
+bool PseudoNTFS::loadFileFromPseudoNtfs(int32_t mftItemIndex, std::string * content) {
+
+    if (mftItemIndex < 0 || mftItemIndex  >= mftItemsCount) {
+        indexOutOfRange = true;
+        return false;
+    }
 
     struct mft_item * mftItem = &mftItemStart[mftItemIndex];
 
@@ -540,14 +593,20 @@ void PseudoNTFS::loadFileFromPseudoNtfs(int32_t mftItemIndex, std::string * cont
     }
 
     *content = oss.str();
+    return true;
 }
 
 void PseudoNTFS::loadDataFragment(int32_t startIndex, int32_t fragmentCount, std::ostringstream * oss) {
 
+    if (startIndex < 0 || startIndex + fragmentCount >= bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return;
+    }
+
     char * buffer = new char[bootRecord->cluster_size + 1];
     buffer[bootRecord->cluster_size] = '\0';
 
-    for (int i = startIndex; i < fragmentCount; i++) {
+    for (int i = startIndex; i < startIndex + fragmentCount; i++) {
         getClusterData(i, (unsigned char *) buffer);
         *oss << buffer;
     }
@@ -555,7 +614,12 @@ void PseudoNTFS::loadDataFragment(int32_t startIndex, int32_t fragmentCount, std
     buffer = NULL;
 }
 
-void PseudoNTFS::getDirectoryContent(const int32_t directoryMftItemIndex, std::list<mft_item> * content) {
+bool PseudoNTFS::getDirectoryContent(const int32_t directoryMftItemIndex, std::list<mft_item> * content) {
+
+    if (directoryMftItemIndex < 0 || directoryMftItemIndex >= mftItemsCount) {
+        indexOutOfRange = true;
+        return false;
+    }
 
     struct mft_item * directoryMftItem = &mftItemStart[directoryMftItemIndex];
 
@@ -575,9 +639,16 @@ void PseudoNTFS::getDirectoryContent(const int32_t directoryMftItemIndex, std::l
         }
     }
 
+    return true;
+
 }
 
 void PseudoNTFS::getAllUidsFromFragment(const int32_t startIndex, const int32_t fragmentsCount, std::list<int32_t> * uids) {
+
+     if (startIndex < 0 || startIndex + fragmentsCount >= bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return;
+    }
 
     int32_t * tempUid = (int32_t *) &dataStart[startIndex * bootRecord->cluster_size];
     int32_t bound = (fragmentsCount * bootRecord->cluster_size) / sizeof(int32_t);
@@ -600,23 +671,33 @@ int32_t PseudoNTFS::findMftItemWithUid(const int32_t uid) {
     return NOT_FOUND;
 }
 
-void PseudoNTFS::makeDirectory(const int32_t parentMftItemIndex, const char * name) {
+bool PseudoNTFS::makeDirectory(const int32_t parentMftItemIndex, const char * name) {
 
-    if (contains(parentMftItemIndex, name, true)) {
-        std::cout << "DIRECTORY WITH GIVEN NAME ALREADY EXISTS\n";
-        return;
+    if (parentMftItemIndex < 0 || parentMftItemIndex >= mftItemsCount) {
+        indexOutOfRange = true;
+        return false;
+    }
+
+    if (contains(parentMftItemIndex, name, true) != NOT_FOUND) {
+        std::cout << "DIRECTORY WITH GIVEN NAME ALREADY EXISTS IN THIS DIRECTORY";
+        return false;
+    }
+
+    if (contains(parentMftItemIndex, name, false) != NOT_FOUND) {
+        std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS IN THIS DIRECTORY";
+        return false;
     }
 
     if (freeSpace < bootRecord->cluster_size) {
         std::cout << "NOT ENOUGH FREE SPACE\n";
-        return;
+        return false;
     }
 
     int32_t mftIndex = findFreeMft();
 
     if (mftIndex == NOT_FOUND) {
         std::cout << "NOT ENOUGH FREE MFT ITEMS\n";
-        return;
+        return false;
     }
 
     int32_t demandedSize, providedSize, startIndex = 0;
@@ -626,7 +707,7 @@ void PseudoNTFS::makeDirectory(const int32_t parentMftItemIndex, const char * na
 
     if (providedSize == 0) {
         std::cout << "NOT ENOUGH FREE SPACE\n";
-        return;
+        return false;
     }
 
     struct mft_item mftItem;
@@ -640,23 +721,36 @@ void PseudoNTFS::makeDirectory(const int32_t parentMftItemIndex, const char * na
     setMftItem(mftIndex, &mftItem);
     saveUid(parentMftItemIndex, mftItem.uid);
 
+    return true;
 }
 
 bool PseudoNTFS::isDirEmpty(const int32_t mftItemIndex) {
+
+    if (mftItemIndex < 0 || mftItemIndex >= mftItemsCount) {
+        indexOutOfRange = true;
+        return false;;
+    }
+
     return mftItemStart[mftItemIndex].item_size == 0;
 }
 
-void PseudoNTFS::removeDirectory(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex) {
+bool PseudoNTFS::removeDirectory(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex) {
+
+    if (mftItemIndex < 0 || mftItemIndex >= mftItemsCount || parentDirectoryMftItemIndex < 0 || parentDirectoryMftItemIndex >= mftItemsCount) {
+        indexOutOfRange = true;
+        return false;
+    }
 
     struct mft_item * mftItem = &mftItemStart[mftItemIndex];
 
     if (!isDirEmpty(mftItemIndex)) {
         std::cout << "NOT EMPTY\n";
-        return;
+        return false;
     }
     else {
         removeUidFromDirectory(parentDirectoryMftItemIndex, mftItem->uid);
-        freeMftItem(mftItemIndex);  
+        freeMftItem(mftItemIndex); 
+        return true; 
     }
 }
 
@@ -724,37 +818,67 @@ bool PseudoNTFS::removeUid(int32_t startIndex, int32_t clusterCount, int32_t uid
 
     int32_t * tempUid = (int32_t *)&dataStart[startIndex * bootRecord->cluster_size]; 
 
-    for (int i = 0; i < clusterCount; i++) {
+    bool removed = false;
+    int32_t indexOfRemoved, indexOfLastFilled;
+    int32_t bound = clusterCount * bootRecord->cluster_count / sizeof(int32_t);
+    for (int i = 0; i < bound; i++) {
         if (tempUid[i] == uid) {
             tempUid[i] = 0;
-            return true;
+            removed = true;
         }
+        else if (tempUid[i] != 0) {
+            indexOfLastFilled = i;
+        }   
+    }
+
+    if (removed && indexOfLastFilled != 0) {
+        tempUid[indexOfRemoved] = tempUid[indexOfLastFilled];
+    }
+    
+    return false;
+}
+
+bool PseudoNTFS::move(const int32_t fileMftItemIndex, const int32_t fromMftItemIndex, const int32_t toMftItemIndex) {
+
+    if (fileMftItemIndex < 0 || fileMftItemIndex >= mftItemsCount ||
+        fromMftItemIndex < 0 || fromMftItemIndex >= mftItemsCount ||
+        toMftItemIndex < 0 || fromMftItemIndex >= mftItemsCount) {
+        indexOutOfRange = true;
+        return false;
+    }
+
+    struct mft_item * mftItem = &mftItemStart[fileMftItemIndex];
+
+    if (contains(toMftItemIndex, mftItem->item_name, false) != NOT_FOUND) {
+        std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS IN DESTINATION DIRECTORY";
+        return false;
+    }
+
+    if (contains(toMftItemIndex, mftItem->item_name, true) != NOT_FOUND) {
+        std::cout << "DIRECTORY WITH GIVEN NAME ALREADY EXISTS IN DESTINATION DIRECTORY";
+        return false;
+    }
+
+    if (saveUid(toMftItemIndex, mftItem->uid)) {
+        removeUidFromDirectory(fromMftItemIndex, mftItem->uid);
+        return true;
     }
 
     return false;
 }
 
-void PseudoNTFS::move(const int32_t fileMftItemIndex, const int32_t fromMftItemIndex, const int32_t toMftItemIndex) {
+bool PseudoNTFS::removeFile(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex) {
 
-    struct mft_item * mftItem = &mftItemStart[fileMftItemIndex];
-
-    if (contains(toMftItemIndex, mftItem->item_name, false)) {
-        std::cout << "FILE WITH GIVEN NAME ALREADY EXISTS IN DESTINATION DIRECTORY\n";
-        return;
+     if (mftItemIndex < 0 || mftItemIndex >= mftItemsCount || parentDirectoryMftItemIndex < 0 || parentDirectoryMftItemIndex >= mftItemsCount) {
+        indexOutOfRange = true;
+        return false;
     }
-
-    if (saveUid(toMftItemIndex, mftItem->uid)) {
-        removeUidFromDirectory(fromMftItemIndex, mftItem->uid);
-    }
-}
-
-void PseudoNTFS::removeFile(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex) {
 
     struct mft_item * mftItem = &mftItemStart[mftItemIndex];
 
     freeMftItemWithData(mftItemIndex);
     removeUidFromDirectory(parentDirectoryMftItemIndex, mftItem->uid);
-
+    return true;
 }
 
 void PseudoNTFS::clearClusterData(const int startIndex, const int32_t clustersCount) {
@@ -849,6 +973,11 @@ void PseudoNTFS::consistencyCheckSlave() {
 
 int32_t PseudoNTFS::getFileDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount) {
 
+    if (dataClusterStartIndex < 0 || dataClusterStartIndex + dataClustersCount >= bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return -1;
+    }
+
     unsigned char * dataCluster = &dataStart[dataClusterStartIndex * bootRecord->cluster_size];
 
     int32_t size = 0;
@@ -862,6 +991,11 @@ int32_t PseudoNTFS::getFileDataFragmentUsedSize(int32_t dataClusterStartIndex, i
 }
 
 int32_t PseudoNTFS::getDirectoryDataFragmentUsedSize(int32_t dataClusterStartIndex, int32_t dataClustersCount) {
+
+    if (dataClusterStartIndex < 0 || dataClusterStartIndex + dataClustersCount >= bootRecord->cluster_count) {
+        indexOutOfRange = true;
+        return -1;
+    }
 
     int32_t * dataCluster = (int32_t *) &dataStart[dataClusterStartIndex * bootRecord->cluster_size];
 
@@ -1008,6 +1142,11 @@ void PseudoNTFS::printMftItemInfo(const mft_item * mftItem) {
     std::cout << "Item size: " << (int) mftItem->item_size << std::endl;
     std::cout << "Item order: " << (int) mftItem->item_order << std::endl;
     std::cout << "Item order total: " << (int) mftItem->item_order_total << std::endl;
+
+    std::cout << "Fragments - i - start adress - count" << std::endl;
+    for (int i = 0; i < MFT_FRAGMENTS_COUNT; i++) {
+         std::cout << i << " - " << mftItem->fragments[i].fragment_start_address << " - " << mftItem->fragments[i].fragment_count << std::endl;
+    }
 }
 
 void PseudoNTFS::printBootRecord(std::ofstream * output) const {

@@ -16,12 +16,8 @@ bool readFile(const char * filePath, std::string * str) {
 
     std::ostringstream oss;
     char c;
-    while (c = file.get()) {
+    while ((c = file.get()) != EOF {
         oss << c;
-
-        if (c == EOF) {
-            break;
-        }
     }
     file.close();
 

@@ -28,7 +28,12 @@ void executeCp(string * fParam, string * sParam) ;
 
 int main(int argc, char * argv[]) {
 
-    pntfs = new PseudoNTFS(DISK_SIZE, CLUSTER_SIZE);
+    if (argc != 2) {
+        cout << "USAGE: PseudoNTFS.out <signature>";
+        exit(0);
+    }
+
+    pntfs = new PseudoNTFS(DISK_SIZE, CLUSTER_SIZE, argv[1]);
 
     currentPath = new Path(pntfs);
   
@@ -40,21 +45,7 @@ int main(int argc, char * argv[]) {
     
         if (command == "EXIT" || command == "exit") {
             break;
-        }
-        else if (command == "PDISK" || command == "pdisk") {
-            pntfs->printDisk();
-        }
-        else if (command == "chdisk") {
-            if (pntfs->checkDiskConsistency()) {
-                cout << ">> DISK IS OK";
-            }
-            else {
-                cout << "DISK IS CORRUPTED";
-            }
-        }
-        else if (command == "ddisk") {
-            pntfs->defragmentDisk();
-        }
+        }    
 
         cout << ">> ";
         executeCommand(command);
@@ -65,62 +56,91 @@ int main(int argc, char * argv[]) {
 
 void executeCommand(string command) {
   
-  istringstream iss(command);
-  string token, fParam, sParam;
+    istringstream iss(command);
+    string token, fParam, sParam;
   
-  getline(iss, token, DELIMETER);
+    getline(iss, token, DELIMETER);
   
-  if (token == "pwd") {
-    currentPath->printPath();
-  }
-  else if (token == "cd") {
-    getline(iss, fParam, DELIMETER);
-    executeCd(&fParam);
-  }
-  else if (token == "incp") {
-    getline(iss, fParam, DELIMETER);
-    getline(iss, sParam, DELIMETER);
-    executeIncp(&fParam, &sParam);
-  }
-  else if (token == "cat") {
-    getline(iss, fParam, DELIMETER);
-    executeCat(&fParam);
-  }
-  else if (token == "info") {
-    getline(iss, fParam, DELIMETER);
-    executeInfo(&fParam);
-  }
-  else if (token == "ls") {
-    getline(iss, fParam, DELIMETER);
-    executeLs(&fParam);
-  }
-  else if (token == "mkdir") {
-    getline(iss, fParam, DELIMETER);
-    executeMkdir(&fParam); 
-  }
-  else if (token == "rmdir") {
-    getline(iss, fParam, DELIMETER);
-    executeRmdir(&fParam); 
-  }
-  else if (token == "outcp") {
-    getline(iss, fParam, DELIMETER);
-    getline(iss, sParam, DELIMETER);
-    executeOutcp(&fParam, &sParam);
-  }
-  else if (token == "rm") {
-    getline(iss, fParam, DELIMETER);
-    executeRm(&fParam); 
-  }
-  else if (token == "mv") {
-    getline(iss, fParam, DELIMETER);
-    getline(iss, sParam, DELIMETER);
-    executeMv(&fParam, &sParam);
-  }
-  else if (token == "cp") {
-    getline(iss, fParam, DELIMETER);
-    getline(iss, sParam, DELIMETER);
-    executeCp(&fParam, &sParam);
-  }
+    if (command == "PDISK" || command == "pdisk") {
+            pntfs->printDisk();
+    }
+    else if (command == "chdisk") {
+        if (pntfs->checkDiskConsistency()) {
+            cout << ">> DISK IS OK";
+        }
+        else {
+            cout << "DISK IS CORRUPTED";
+        }
+    }
+    else if (command == "ddisk") {
+        pntfs->defragmentDisk();
+    }
+    else if (token ==  "load") {
+        getline(iss, fParam, DELIMETER);
+
+        ifstream ifs(fParam);
+
+        if (ifs) {
+            while (getline(ifs, command)) {
+                executeCommand(command);
+            }
+            ifs.close();
+        }
+        else {
+            cout << "FILE NOT FOUND";
+        }
+    }
+    else if (token == "pwd") {
+        currentPath->printPath();
+    }
+    else if (token == "cd") {
+        getline(iss, fParam, DELIMETER);
+        executeCd(&fParam);
+    }
+    else if (token == "incp") {
+        getline(iss, fParam, DELIMETER);
+        getline(iss, sParam, DELIMETER);
+        executeIncp(&fParam, &sParam);
+    }
+    else if (token == "cat") {
+        getline(iss, fParam, DELIMETER);
+        executeCat(&fParam);
+    }
+    else if (token == "info") {
+        getline(iss, fParam, DELIMETER);
+        executeInfo(&fParam);
+    }
+    else if (token == "ls") {
+        getline(iss, fParam, DELIMETER);
+        executeLs(&fParam);
+    }
+    else if (token == "mkdir") {
+        getline(iss, fParam, DELIMETER);
+        executeMkdir(&fParam); 
+    }
+    else if (token == "rmdir") {
+        getline(iss, fParam, DELIMETER);
+        executeRmdir(&fParam); 
+    }
+    else if (token == "outcp") {
+        getline(iss, fParam, DELIMETER);
+        getline(iss, sParam, DELIMETER);
+        executeOutcp(&fParam, &sParam);
+    }
+    else if (token == "rm") {
+        getline(iss, fParam, DELIMETER);
+        executeRm(&fParam); 
+    }
+    else if (token == "mv") {
+        getline(iss, fParam, DELIMETER);
+        getline(iss, sParam, DELIMETER);
+        executeMv(&fParam, &sParam);
+    }
+    else if (token == "cp") {
+        getline(iss, fParam, DELIMETER);
+        getline(iss, sParam, DELIMETER);
+        executeCp(&fParam, &sParam);
+    }
   
 }
 
@@ -150,7 +170,9 @@ void executeIncp(string * fParam, string * sParam) {
     if (tempPath.change(path, true)) {
         char fileName[12];
         Path::getNameFromPath(fParam->c_str(), fileName);
-        pntfs->saveFileToPseudoNtfs(fileName, fParam->c_str(), tempPath.getCurrentMftIndex());
+        if (pntfs->saveFileToPseudoNtfs(fileName, fParam->c_str(), tempPath.getCurrentMftIndex())) {
+            cout << "OK";
+        }
     }
     else {
         cout << "PATH NOT FOUND";
@@ -167,8 +189,9 @@ void executeCat(string * param) {
     Path tempPath = *currentPath;
     if (tempPath.change(path, false)) {
         string content;
-        pntfs->loadFileFromPseudoNtfs(tempPath.getCurrentMftIndex(), &content);
-        cout << content;
+        if (pntfs->loadFileFromPseudoNtfs(tempPath.getCurrentMftIndex(), &content)) {
+            cout << content;
+        }
     }
     else {
         cout << "FILE NOT FOUND";
@@ -187,12 +210,10 @@ void executeInfo(string * param) {
     Path fTempPath = *currentPath;
     Path sTempPath = *currentPath;
     if (fTempPath.change(path, false)) {
-        mftItem = pntfs->getMftItem(fTempPath.getCurrentMftIndex());
-        pntfs->printMftItemInfo(mftItem);
+        pntfs->printMftItem(fTempPath.getCurrentMftIndex());
     }
     else if (sTempPath.change(path, true)) {
-        mftItem = pntfs->getMftItem(sTempPath.getCurrentMftIndex());
-        pntfs->printMftItemInfo(mftItem);
+        pntfs->printMftItem(sTempPath.getCurrentMftIndex());
     }
     else {
         cout << "PATH NOT FOUND";
@@ -246,7 +267,9 @@ void executeMkdir(string * param) {
     strcpy(parentPath, parentDirectoryPath.c_str());
 
     if (tempPath.change(parentPath, true)) {
-        pntfs->makeDirectory(tempPath.getCurrentMftIndex(), name);
+        if (pntfs->makeDirectory(tempPath.getCurrentMftIndex(), name)) {
+            cout << "OK";
+        }
     }
     else {
         cout << "PATH NOT FOUND";
@@ -266,7 +289,9 @@ void executeRmdir(string * param) {
         int32_t mftItemIndex = tempPath.getCurrentMftIndex();
         tempPath.goBack();
         int32_t parentDirectoryMftItemIndex = tempPath.getCurrentMftIndex();
-        pntfs->removeDirectory(mftItemIndex, parentDirectoryMftItemIndex);
+        if (pntfs->removeDirectory(mftItemIndex, parentDirectoryMftItemIndex)) {
+            cout << "OK";
+        }
     }
     else {
         cout << "PATH NOT FOUND";
@@ -284,16 +309,16 @@ void executeOutcp(string * fParam, string * sParam) {
     Path tempPath = *currentPath;
     if (tempPath.change(path, false)) {
         string content;
-        pntfs->loadFileFromPseudoNtfs(tempPath.getCurrentMftIndex(), &content);
-        
-        ofstream file(*sParam);
-        if (file) {
-            file << content;
-            file.close();
-            cout << "OK"; 
-        }
-        else {
-           cout << "PATH NOT FOUND"; 
+        if (pntfs->loadFileFromPseudoNtfs(tempPath.getCurrentMftIndex(), &content)) {
+            ofstream file(*sParam);
+            if (file) {
+                file << content;
+                file.close();
+                cout << "OK"; 
+            }
+            else {
+            cout << "PATH NOT FOUND"; 
+            }
         }
     }
     else {
@@ -313,7 +338,9 @@ void executeRm(string * param) {
     if (tempPath.change(path, false)) {
         mftItemIndex = tempPath.getCurrentMftIndex();
         tempPath.goBack();
-        pntfs->removeFile(mftItemIndex, tempPath.getCurrentMftIndex());
+        if (pntfs->removeFile(mftItemIndex, tempPath.getCurrentMftIndex())) {
+            cout << "OK";
+        }
     }
     else {
         cout << "FILE NOT FOUND";
@@ -338,7 +365,9 @@ void executeMv(string * fParam, string * sParam) {
         if (tempPath.change(sPath, true)) {
             directoryMftIndex = tempPath.getCurrentMftIndex();
             tempPath.goBack();
-            pntfs->move(fileMftIndex, tempPath.getCurrentMftIndex(), directoryMftIndex);
+            if (pntfs->move(fileMftIndex, tempPath.getCurrentMftIndex(), directoryMftIndex)) {
+                cout << "OK";
+            }
         }
         else {
             cout << "PATH NOT FOUND";
@@ -366,7 +395,9 @@ void executeCp(string * fParam, string * sParam) {
         fileMftItemIndex = tempPath.getCurrentMftIndex();
         Path tempPath = *currentPath;
         if (tempPath.change(sPath, true)) {
-            pntfs->copy(fileMftItemIndex, tempPath.getCurrentMftIndex());
+            if (pntfs->copy(fileMftItemIndex, tempPath.getCurrentMftIndex())) {
+                cout << "OK";
+            }
         }
         else {
            cout << "PATH NOT FOUND"; 

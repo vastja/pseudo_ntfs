@@ -204,7 +204,7 @@
              * +param - fileData - content of file
              * +param - fileLength - size of file in bytes
             */
-            void save(std::list<struct data_seg> * dataSegmentList, const char * fileName, int32_t uid, char * fileData, int32_t fileLength);
+            bool save(std::list<struct data_seg> * dataSegmentList, const char * fileName, int32_t uid, char * fileData, int32_t fileLength);
             
             /* search for clusters for directory/file with given name
              * can set index out of borders flag
@@ -296,7 +296,6 @@
             */
             void prepareIndexTable(int32_t indextable[]);
             /* fill index table with values 
-             * can set index out of borders flag
              * +param - indexTable - index table
              * +param - startIndex - start index in index table
              * +param - count - count of indexs filled into index table
@@ -304,7 +303,6 @@
             */
             void fillIndexTable(int32_t indexTable[] ,const int32_t startIndex, const int32_t count, const int32_t startWithIndex);
             /* defragment data cluster
-             * can set index out of borders flag
              * +param - indextable - index table
              * +param - checkIndex - data cluster we check (move)
             */
@@ -318,7 +316,7 @@
 
         public:
 
-            PseudoNTFS(int32_t diskSize, int32_t clusterSize);
+            PseudoNTFS(const int32_t diskSize, const int32_t clusterSize, const char * singnature);
             ~PseudoNTFS();
 
             /* save file to ntfs
@@ -327,13 +325,13 @@
              * +param - filePath - path to file
              * +param - parentDirectoryMftIndex - index of mfti item of directory where the file will be saved 
             */
-            void saveFileToPseudoNtfs(const char * fileName, const char * filePath, int32_t parentDirectoryMftIndex);
+            bool saveFileToPseudoNtfs(const char * fileName, const char * filePath, int32_t parentDirectoryMftIndex);
             /* load file form ntfs
              * can set index out of borders flag
              * +param - mftItemIndex - index of mft itme of demanded file
              * +param - string for file loading 
             */
-            void loadFileFromPseudoNtfs(int32_t mftItemIndex, std::string * content);
+            bool loadFileFromPseudoNtfs(int32_t mftItemIndex, std::string * content);
 
             /* clear error state
             */
@@ -356,45 +354,45 @@
              * +param - index - index of demanded mft item
              * +return demanded mft item, or NULL
             */
-            mft_item * getMftItem(const int index);
+            void printMftItem(const int index);
             /* get content of directory
              * can set index out of borders flag
              * +param - directoryMftitemIndex - mft index of directory content is from
              * +param - content - list for content saving
             */
-            void getDirectoryContent(const int32_t directoryMftItemIndex, std::list<mft_item> * content);
+            bool getDirectoryContent(const int32_t directoryMftItemIndex, std::list<mft_item> * content);
 
             /* make directory
              * can set index out of borders flag
              * +param - perntMftitemIndex - index of mft item where directory will be created
              * +param - name - directory name
             */
-            void makeDirectory(const int32_t parentMftItemIndex, const char * name);
+            bool makeDirectory(const int32_t parentMftItemIndex, const char * name);
             /* remove directory
              * can set index out of borders flag
              * +param - mftItemIndex - index of mft item for removal
              * +param - parentDirectoryMftItemindex - index of mft item where directory for remove is
             */
-            void removeDirectory(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex);
+            bool removeDirectory(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex);
             /* moev file to another directory
              * can set index out of borders flag
              * +param - fileMftItemIndex - index of mft item of file
              * +param - fromMftItemIndex - index origina directory mft item file is from
              * +param toMdtItemIndex - index of directory mft item file will be moved to
             */
-            void move(const int32_t fileMftItemIndex, const int32_t fromMftItemIndex, const int32_t toMftItemIndex);
+            bool move(const int32_t fileMftItemIndex, const int32_t fromMftItemIndex, const int32_t toMftItemIndex);
             /* remove file
              * can set index out of borders flag
              * +param - mftItemIndex - index of file mft item
              * +param - parentDirectoryMftitemIndex - index of directory mft item file is from
             */
-            void removeFile(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex);
+            bool removeFile(const int32_t mftItemIndex, const int32_t parentDirectoryMftItemIndex);
             /* copy file to directory
              * can set index out of borders flag
              * +param - fileMftitemIndex - index of file mft item for copying
              * +param - toMftItemIndex - index of destination mft item
             */
-            void copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex);
+            bool copy(const int32_t fileMftItemIndex, int32_t toMftItemIndex);
             /*********************/
             /* ADVANCE FUNCTIONS */
             /*********************/
